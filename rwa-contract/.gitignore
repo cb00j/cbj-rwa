@@ -1,0 +1,52 @@
+# =========================
+# Foundry / Forge
+# =========================
+out/
+cache/
+broadcast/
+artifacts/
+node_modules/
+
+# Forge snapshot
+snapshots/
+
+# =========================
+# Dependencies
+# =========================
+lib/
+
+# 如果你用 git submodule 管理 lib，可以删除这一行
+# 保留 lib/ 目录结构但忽略内容：
+# !lib/
+# lib/*
+
+# =========================
+# Environment
+# =========================
+#.env
+.env.*
+!.env.example
+#.keys
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# JetBrains (GoLand / IntelliJ)
+.idea/
+
+# =========================
+# Misc
+# =========================
+*.tmp
+*.swp
