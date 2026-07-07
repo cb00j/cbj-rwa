@@ -93,6 +93,8 @@ contract OrderContract is
         uint indexed orderId,
         address indexed user,
         uint refundAmount,
+        uint burnAmount,
+        uint mintAmount,
         TimeInForce tif
     );
 
@@ -198,7 +200,7 @@ contract OrderContract is
 
         // Create order with globally unique auto-increment ID
         uint seq = ++accountOrderSeq[msg.sender];
-        orderId = nextOrderId++;
+        orderId = ++nextOrderId;
 
         orders[orderId] = Order(
             orderId,
@@ -241,16 +243,18 @@ contract OrderContract is
 
     // ========== Backend Flow ============
     /**
-     * @notice Backend marks the order as executed and burns all escrowed funds
+     * @notice Backend marks the order as executed and burn/mint the corresponding tokens.
      * @dev Requires this contract to be granted the BURNER_ROLE for the escrow asset (USDM or symbol token)
      */
     function markExecuted(
         uint orderId,
-        uint256 returnAmount
+        uint256 returnAmount,
+        uint256 mintAmount
     ) external onlyRole(BACKEND_ROLE) nonReentrant {
         Order storage order = orders[orderId];
         if (order.user == address(0)) revert NotFound();
-        if (order.status != Status.PENDING) revert InvalidStatus();
+        if (order.status == Status.EXECUTED) revert AlreadyExecuted();
+        if (order.status == Status.CANCELLED) revert AlreadyCancelled();
         // Set status to Executed
         order.status = Status.EXECUTED;
         // Refund any excess amount (if present)
@@ -264,10 +268,26 @@ contract OrderContract is
             );
         }
 
+        // Burn the escrowed funds in this contract (USDM or symbol token)
+        uint256 burnAmount = order.amount - returnAmount;
+        if (burnAmount > 0) {
+            ICBJTokenLike(order.escrowAsset).burn(burnAmount);
+        }
+
+        // Mint the corresponding tokens to the user (USDM or symbol token)
+        if (mintAmount > 0) {
+            ICBJTokenLike mintToken = order.side == Side.BUY
+                ? symbolToToken[order.symbol]
+                : USDM;
+            mintToken.mint(order.user, mintAmount);
+        }
+
         emit OrderExecuted(
             orderId,
             order.user,
             returnAmount,
+            burnAmount,
+            mintAmount,
             order.timeInForce
         );
     }
