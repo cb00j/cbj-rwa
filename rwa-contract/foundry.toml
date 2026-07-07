@@ -1,6 +1,26 @@
 [profile.default]
 src = "src"
 out = "out"
+script = "script"
 libs = ["lib"]
 
+solc = "0.8.26"
+# 添加以下三行开启 IR 编译和优化器
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+
+fs_permissions = [
+    { access = "write", path = "./deployments" },
+    { access = "read", path = "./deployments" },
+]
+
+[invariant]
+#用例出现revert后立即暂停
+fail_on_revert = true
+
+[rpc_endpoints]
+#可以在部署脚本内直接使用 --rpc-url local
+local = "http://127.0.0.1:8545"
+sepolia = "https://1rpc.io/sepolia"
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
