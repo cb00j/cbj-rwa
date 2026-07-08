@@ -4,7 +4,6 @@ pragma solidity ^0.8.26;
 import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ICBJTokenLike} from "../token/interfaces/ICBJTokenLike.sol";
 
 contract OrderContract is
@@ -45,7 +44,7 @@ contract OrderContract is
 
     // ============Storage============
     // USDM used as the payment token for Buy orders
-    ICBJTokenLike public USDM;
+    ICBJTokenLike public usdm;
     // Registered CBJToken for each symbol (payment token for Sell orders)
     mapping(string => ICBJTokenLike) public symbolToToken;
     // Global auto-increment nonce for unique orderId (used as storage key)
@@ -126,23 +125,23 @@ contract OrderContract is
 
     /**
      * @notice Initialize the contract (set USDM and roles)
-     * @param usdm_ USDM token address (payment asset for Buy orders)
-     * @param admin_ Admin address (granted DEFAULT_ADMIN_ROLE)
-     * @param backend_ Backend address (granted BACKEND_ROLE; may be zero address)
+     * @param _usdm USDM token address (payment asset for Buy orders)
+     * @param _admin Admin address (granted DEFAULT_ADMIN_ROLE)
+     * @param _backend Backend address (granted BACKEND_ROLE; may be zero address)
      */
     function initialize(
-        address usdm_,
-        address admin_,
-        address backend_
+        address _usdm,
+        address _admin,
+        address _backend
     ) external initializer {
-        if (usdm_ == address(0)) revert ZeroAddress();
-        if (admin_ == address(0)) revert ZeroAddress();
+        if (_usdm == address(0)) revert ZeroAddress();
+        if (_admin == address(0)) revert ZeroAddress();
 
-        USDM = ICBJTokenLike(usdm_);
+        usdm = ICBJTokenLike(_usdm);
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        if (backend_ != address(0)) {
-            _grantRole(BACKEND_ROLE, backend_);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        if (_backend != address(0)) {
+            _grantRole(BACKEND_ROLE, _backend);
         }
     }
 
@@ -187,7 +186,7 @@ contract OrderContract is
         if (qty == 0) revert AmountZero();
         if (price == 0) revert AmountZero();
 
-        ICBJTokenLike token = side == Side.BUY ? USDM : symbolToToken[symbol];
+        ICBJTokenLike token = side == Side.BUY ? usdm : symbolToToken[symbol];
         if (address(0) == address(token)) revert ZeroAddress();
 
         uint amount = side == Side.BUY ? price * qty : qty;
@@ -202,20 +201,20 @@ contract OrderContract is
         uint seq = ++accountOrderSeq[msg.sender];
         orderId = ++nextOrderId;
 
-        orders[orderId] = Order(
-            orderId,
-            _composeOrderId(msg.sender, orderType, seq),
-            msg.sender,
-            symbol,
-            qty,
-            address(token),
-            amount,
-            price,
-            side,
-            orderType,
-            Status.PENDING,
-            tif
-        );
+        orders[orderId] = Order({
+            id: orderId,
+            orderNumber: _composeOrderId(msg.sender, orderType, seq),
+            user: msg.sender,
+            symbol: symbol,
+            qty: qty,
+            escrowAsset: address(token),
+            amount: amount,
+            price: price,
+            side: side,
+            orderType: orderType,
+            status: Status.PENDING,
+            timeInForce: tif
+        });
 
         emit OrderSubmitted(
             msg.sender,
@@ -278,7 +277,7 @@ contract OrderContract is
         if (mintAmount > 0) {
             ICBJTokenLike mintToken = order.side == Side.BUY
                 ? symbolToToken[order.symbol]
-                : USDM;
+                : usdm;
             mintToken.mint(order.user, mintAmount);
         }
 
