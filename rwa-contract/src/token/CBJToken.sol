@@ -7,9 +7,9 @@ import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-import {ICBJToken} from "./interfaces/ICBJToken.sol";
-import {ICBJCompliance} from "../compliance/interfaces/ICBJCompliance.sol";
-import {ICBJTokenPauseManager} from "../compliance/interfaces/ICBJTokenPauseManager.sol";
+import {ICBJToken} from "src/token/interfaces/ICBJToken.sol";
+import {ICBJCompliance} from "src/compliance/interfaces/ICBJCompliance.sol";
+import {ICBJTokenPauseManager} from "src/compliance/interfaces/ICBJTokenPauseManager.sol";
 
 contract CBJToken is ERC20, AccessControlEnumerable, Initializable, ICBJToken {
     /// Role for changing the token name, symbol, compliance and token pause manager
@@ -60,7 +60,7 @@ contract CBJToken is ERC20, AccessControlEnumerable, Initializable, ICBJToken {
         string memory symbol_,
         address _cbjCompliance,
         address _tokenPauseManager
-    ) external {
+    ) external initializer {
         // Grant roles to the caller (factory)
         _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
         _grantRole(CONFIGURE_ROLE, _msgSender());
@@ -172,6 +172,46 @@ contract CBJToken is ERC20, AccessControlEnumerable, Initializable, ICBJToken {
     }
 
     /**
+     * @notice Transfers shares to a specified address
+     * @param to The address to transfer shares to
+     * @param sharesAmount The amount of shares to transfer
+     * @return True if the transfer was successful
+     */
+    function transferShares(
+        address to,
+        uint256 sharesAmount
+    ) external returns (bool) {
+        uint256 underlyingAmount = _getUnderlyingAmountByShares(
+            sharesAmount,
+            multiplier
+        );
+        _transfer(_msgSender(), to, underlyingAmount);
+        return true;
+    }
+
+    /**
+     * @notice Returns the amount of shares that corresponds to underlying amount
+     * @param underlyingAmount The underlying token amount
+     * @return The corresponding shares amount
+     */
+    function getSharesByUnderlyingAmount(
+        uint256 underlyingAmount
+    ) external view returns (uint256) {
+        return _getSharesByUnderlyingAmount(underlyingAmount, multiplier);
+    }
+
+    /**
+     * @notice Returns the amount of underlying that corresponds to shares amount
+     * @param sharesAmount The shares amount
+     * @return The corresponding underlying token amount
+     */
+    function getUnderlyingAmountByShares(
+        uint256 sharesAmount
+    ) external view returns (uint256) {
+        return _getUnderlyingAmountByShares(sharesAmount, multiplier);
+    }
+
+    /**
      * @notice Sets the compliance address
      *
      * @param _cbjCompliance New compliance address
@@ -216,6 +256,19 @@ contract CBJToken is ERC20, AccessControlEnumerable, Initializable, ICBJToken {
     }
 
     /**
+     * @notice Updates the multiplier value
+     * @param newMultiplier The new multiplier value
+     * @dev Only callable by accounts with MULTIPLIER_UPDATE_ROLE
+     */
+    function updateMultiplier(
+        uint256 newMultiplier
+    ) external onlyRole(MULTIPLIER_UPDATE_ROLE) {
+        multiplier = newMultiplier;
+        multiplierNonce += 1;
+        emit MultiplierUpdated(newMultiplier);
+    }
+
+    /**
      * @dev Override _update to work with shares and compliance checks
      */
     function _update(
@@ -230,7 +283,7 @@ contract CBJToken is ERC20, AccessControlEnumerable, Initializable, ICBJToken {
         if (from == address(0)) {
             // Minting
             if (to == address(0)) revert MintToCannotBeZero();
-            uint256 mintShares = _getUnderlyingAmountByShares(
+            uint256 mintShares = _getSharesByUnderlyingAmount(
                 amount,
                 multiplier
             );
@@ -241,7 +294,7 @@ contract CBJToken is ERC20, AccessControlEnumerable, Initializable, ICBJToken {
             emit TransferShares(address(0), to, mintShares);
         } else if (to == address(0)) {
             // Burning
-            uint256 burnShares = _getUnderlyingAmountByShares(
+            uint256 burnShares = _getSharesByUnderlyingAmount(
                 amount,
                 multiplier
             );
@@ -256,7 +309,7 @@ contract CBJToken is ERC20, AccessControlEnumerable, Initializable, ICBJToken {
             emit TransferShares(from, address(0), burnShares);
         } else {
             // Transferring
-            uint256 transferShares = _getUnderlyingAmountByShares(
+            uint256 transferShares = _getSharesByUnderlyingAmount(
                 amount,
                 multiplier
             );

@@ -25,7 +25,7 @@ interface ICBJCompliance is IAccessControl {
      * @param  cbjToken  The CBJ token address
      * @param  blocklist The blocklist contract
      */
-    function setBlockList(address cbjToken, ICBJBlocklist blocklist) external;
+    function setBlocklist(address cbjToken, ICBJBlocklist blocklist) external;
 
     /**
      * @notice Set the sanctions list for a given CBJ token

@@ -64,10 +64,10 @@ interface ICBJToken is IERC20, IERC20Metadata, IAccessControl {
     function burn(uint256 amount) external;
 
     /**
-     * @notice Updates the multiplier address
-     * @param newMultiplier The new multiplier address
+     * @notice Updates the multiplier value
+     * @param newMultiplier The new multiplier value
      */
-    function updateMultiplier(address newMultiplier) external;
+    function updateMultiplier(uint256 newMultiplier) external;
 
     /**
      * @notice Transfers shares to a specified address
