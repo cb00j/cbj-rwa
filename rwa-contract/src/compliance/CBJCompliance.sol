@@ -133,9 +133,9 @@ contract CBJCompliance is
      */
     function setCBJRole(address cbjToken) external onlyRole(CBJ_MANAGE_ROLE) {
         if (cbjToken == address(0)) revert CBJAddressCannotBeZero();
-        bytes32 role = keccak256(abi.encodePacked(cbjToken));
-        _setRoleAdmin(role, CBJ_MANAGE_ROLE);
-        cbjRole[cbjToken] = role;
+        bytes32 role = keccak256(abi.encodePacked(cbjToken)); // generate a unique role for the CBJ token based on its address
+        _setRoleAdmin(role, CBJ_MANAGE_ROLE); // only CBJ_MANAGE_ROLE can manage this role,and will invoke function _grantRole granting the role to someone
+        cbjRole[cbjToken] = role; // only the one who granted this role or admin can manage the token(setBlocklist/setSanctionsList)
         emit CBJRoleSet(cbjToken, role);
     }
 
