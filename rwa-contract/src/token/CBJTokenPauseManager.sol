@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {ICBJTokenPauseManager} from "src/compliance/interfaces/ICBJTokenPauseManager.sol";
+import {ICBJTokenPauseManager} from "token/interfaces/ICBJTokenPauseManager.sol";
 
 /**
  * @title TokenPauseManager
