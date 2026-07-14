@@ -398,7 +398,7 @@ contract CBJGateway is
      * @notice Generate a unique operation ID
      * @return The generated operation ID
      */
-    function _generateOperationId() internal view returns (bytes32) {
+    function _generateOperationId() internal returns (bytes32) {
         return
             keccak256(
                 abi.encodePacked(
