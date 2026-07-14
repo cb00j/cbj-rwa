@@ -82,34 +82,34 @@ contract CBJGateway is
 
     /**
      * @notice Initialize function for proxy deployment
-     * @param usdc_ The USDC token address
-     * @param cbjUSDC_ The cbjUSDC token address
-     * @param guardian_ The guardian address
-     * @param minimumDepositAmount_ The minimum deposit amount
-     * @param minimumWithdrawalAmount_ The minimum withdrawal amount
+     * @param _usdc The USDC token address
+     * @param _cbjUSDC The cbjUSDC token address
+     * @param _guardian The guardian address
+     * @param _minimumDepositAmount The minimum deposit amount
+     * @param _minimumWithdrawalAmount The minimum withdrawal amount
      */
     function initialize(
-        address usdc_,
-        address cbjUSDC_,
-        address guardian_,
-        uint256 minimumDepositAmount_,
-        uint256 minimumWithdrawalAmount_
+        address _usdc,
+        address _cbjUSDC,
+        address _guardian,
+        uint256 _minimumDepositAmount,
+        uint256 _minimumWithdrawalAmount
     ) external initializer {
-        if (usdc_ == address(0)) revert AddressCannotBeZero();
-        if (cbjUSDC_ == address(0)) revert AddressCannotBeZero();
-        if (guardian_ == address(0)) revert AddressCannotBeZero();
+        if (_usdc == address(0)) revert AddressCannotBeZero();
+        if (_cbjUSDC == address(0)) revert AddressCannotBeZero();
+        if (_guardian == address(0)) revert AddressCannotBeZero();
 
-        minimumDepositAmount = minimumDepositAmount_;
-        minimumWithdrawalAmount = minimumWithdrawalAmount_;
+        minimumDepositAmount = _minimumDepositAmount;
+        minimumWithdrawalAmount = _minimumWithdrawalAmount;
 
         // Create pending token contracts
         PENDING_CBJ_USDC = address(new PendingCbjUSDC(address(this)));
         PENDING_USDC = address(new PendingUSDC(address(this)));
 
-        _grantRole(DEFAULT_ADMIN_ROLE, guardian_);
-        _grantRole(CONFIGURE_ROLE, guardian_);
-        _grantRole(PAUSE_ROLE, guardian_);
-        _grantRole(PROCESSOR_ROLE, guardian_);
+        _grantRole(DEFAULT_ADMIN_ROLE, _guardian);
+        _grantRole(CONFIGURE_ROLE, _guardian);
+        _grantRole(PAUSE_ROLE, _guardian);
+        _grantRole(PROCESSOR_ROLE, _guardian);
     }
 
     /**

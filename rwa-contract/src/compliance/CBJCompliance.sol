@@ -53,6 +53,7 @@ contract CBJCompliance is
      */
     function initialize(address admin) external initializer {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(MASTER_CONFIGURE_ROLE, admin);
     }
 
     /**

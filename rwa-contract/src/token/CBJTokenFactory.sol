@@ -76,7 +76,7 @@ contract CBJTokenFactory is
      * @param _guardian The address which will be granted admin and other roles
      * @param _cbjCompliance The address of the CBJCompliance contract
      * @param _tokenPauseManager The address of the token pause manager contract
-     * @param _tokenManagerRegistrar The address of the token manager registrar contract
+     * @param _tokenManagerRegistrar The address of the token manager registrar contract,maybe empty
      */
     function initialize(
         address _guardian,
@@ -87,9 +87,6 @@ contract CBJTokenFactory is
         if (_cbjCompliance == address(0)) revert ComplianceCannotBeZero();
         if (_tokenPauseManager == address(0))
             revert TokenPauseManagerCannotBeZero();
-        if (_tokenManagerRegistrar == address(0)) {
-            revert TokenManagerRegistrarCannotBeZero();
-        }
 
         _grantRole(DEFAULT_ADMIN_ROLE, _guardian);
         _grantRole(DEPLOY_ROLE, _guardian);
@@ -135,6 +132,9 @@ contract CBJTokenFactory is
         whenNotPaused
         returns (address)
     {
+        if (tokenAdmin == address(0))
+            revert TokenManagerRegistrarCannotBeZero();
+
         CBJToken token = CBJToken(_deployCBJToken(name, symbol));
         token.grantRole(DEFAULT_ADMIN_ROLE, address(tokenManagerRegistrar));
         tokenManagerRegistrar.register(address(token));
