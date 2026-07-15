@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {ICBJRegistrar} from "token/interfaces/ICBJRegistrar.sol";
+import {ICBJRegistrar} from "src/token/interfaces/ICBJRegistrar.sol";
 
 interface ICBJTokenFactory is IAccessControl {
     // ============ Functions ============

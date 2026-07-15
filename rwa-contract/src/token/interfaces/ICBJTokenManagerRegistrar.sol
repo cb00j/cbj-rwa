@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {ICBJRegistrar} from "token/interfaces/ICBJRegistrar.sol";
-import {CBJTokenManager} from "token/CBJTokenManager.sol";
+import {ICBJRegistrar} from "src/token/interfaces/ICBJRegistrar.sol";
+import {CBJTokenManager} from "src/token/CBJTokenManager.sol";
 
 /**
  * @title  ICBJTokenManagerRegistrar

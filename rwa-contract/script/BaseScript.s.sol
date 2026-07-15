@@ -6,7 +6,8 @@ import {console2} from "forge-std/console2.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 abstract contract BaseScript is Script {
-    uint256 internal deployerPrivateKey;
+    uint256 internal deployerPrivateKey =
+        0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
     address internal deployer;
     address internal factory = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
@@ -14,7 +15,6 @@ abstract contract BaseScript is Script {
     string constant DEPLOYMENT_PATH = "./deployments/contract_addresses.json";
 
     function setUp() public virtual {
-        deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         deployer = vm.addr(deployerPrivateKey);
     }
 

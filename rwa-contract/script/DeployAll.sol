@@ -6,8 +6,6 @@ import {console2} from "forge-std/console2.sol";
 import {MockUSDC} from "script/mocks/MockUSDC.sol";
 import {CBJToken} from "src/token/CBJToken.sol";
 import {CBJTokenPauseManager} from "src/token/CBJTokenPauseManager.sol";
-import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {CBJBlocklist} from "src/compliance/CBJBlocklist.sol";
 import {CBJSanctionsList} from "src/compliance/CBJSanctionsList.sol";
@@ -112,6 +110,9 @@ contract DeployAll is BaseScript {
         );
         saveContract("CBJCompliance", complianceProxy);
         console2.log("CBJCompliance deployed at:", complianceProxy);
+
+        CBJCompliance compliance = CBJCompliance(complianceProxy);
+        compliance.grantRole(compliance.MASTER_CONFIGURE_ROLE(), deployer);
 
         // =============================================
         // Step 3: 使用CBJTokenFactory创建CBJToken实例 —— 一个 Beacon,三个实例(USDM / AAPL.cbj / TSLA.cbj)
@@ -244,18 +245,18 @@ contract DeployAll is BaseScript {
 
         // 6d. 把 Blocklist/SanctionsList 接到每只代币上 —— 名单目前是空的,不影响任何人使用,
         //     后面要拉黑谁,直接对 CBJBlocklist/CBJSanctionsList 操作,不需要重新部署任何东西
-        complianceImpl.setBlocklist(usdmProxy, CBJBlocklist(blocklistProxy));
-        complianceImpl.setSanctionsList(
+        compliance.setBlocklist(usdmProxy, CBJBlocklist(blocklistProxy));
+        compliance.setSanctionsList(
             usdmProxy,
             CBJSanctionsList(sanctionsListProxy)
         );
-        complianceImpl.setBlocklist(aaplProxy, CBJBlocklist(blocklistProxy));
-        complianceImpl.setSanctionsList(
+        compliance.setBlocklist(aaplProxy, CBJBlocklist(blocklistProxy));
+        compliance.setSanctionsList(
             aaplProxy,
             CBJSanctionsList(sanctionsListProxy)
         );
-        complianceImpl.setBlocklist(tslaProxy, CBJBlocklist(blocklistProxy));
-        complianceImpl.setSanctionsList(
+        compliance.setBlocklist(tslaProxy, CBJBlocklist(blocklistProxy));
+        compliance.setSanctionsList(
             tslaProxy,
             CBJSanctionsList(sanctionsListProxy)
         );

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {ICBJTokenFactory} from "token/interfaces/ICBJTokenFactory.sol";
-import {ICBJRegistrar} from "token/interfaces/ICBJRegistrar.sol";
-import {CBJToken} from "token/CBJToken.sol";
+import {ICBJTokenFactory} from "src/token/interfaces/ICBJTokenFactory.sol";
+import {ICBJRegistrar} from "src/token/interfaces/ICBJRegistrar.sol";
+import {CBJToken} from "src/token/CBJToken.sol";
 import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";

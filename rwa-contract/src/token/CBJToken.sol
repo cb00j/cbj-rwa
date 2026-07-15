@@ -7,9 +7,9 @@ import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-import {ICBJToken} from "token/interfaces/ICBJToken.sol";
-import {ICBJCompliance} from "compliance/interfaces/ICBJCompliance.sol";
-import {ICBJTokenPauseManager} from "token/interfaces/ICBJTokenPauseManager.sol";
+import {ICBJToken} from "src/token/interfaces/ICBJToken.sol";
+import {ICBJCompliance} from "src/compliance/interfaces/ICBJCompliance.sol";
+import {ICBJTokenPauseManager} from "src/token/interfaces/ICBJTokenPauseManager.sol";
 
 contract CBJToken is ERC20, AccessControlEnumerable, Initializable, ICBJToken {
     /// Role for changing the token name, symbol, compliance and token pause manager

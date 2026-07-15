@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {PendingToken} from "gateway/PendingToken.sol";
+import {PendingToken} from "src/gateway/PendingToken.sol";
 
 /**
  * @title  PendingCbjUSDC

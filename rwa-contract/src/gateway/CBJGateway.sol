@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
-import {ICBJGateway} from "gateway/interfaces/ICBJGateway.sol";
+import {ICBJGateway} from "src/gateway/interfaces/ICBJGateway.sol";
 
-import {PendingUSDC} from "gateway/PendingUSDC.sol";
-import {PendingCbjUSDC} from "gateway/PendingCbjUSDC.sol";
+import {PendingUSDC} from "src/gateway/PendingUSDC.sol";
+import {PendingCbjUSDC} from "src/gateway/PendingCbjUSDC.sol";
 import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ICBJTokenLike} from "token/interfaces/ICBJTokenLike.sol";
-import {PendingToken} from "gateway/PendingToken.sol";
+import {ICBJTokenLike} from "src/token/interfaces/ICBJTokenLike.sol";
+import {PendingToken} from "src/gateway/PendingToken.sol";
 
 /**
  * @title  CBJGateway
@@ -116,7 +116,7 @@ contract CBJGateway is
      * @notice Modifier to check if deposits are not paused
      */
     modifier whenDepositsNotPaused() {
-        if (depositsArePaused) revert DepositsArePaused();
+        _whenDepositsNotPaused();
         _;
     }
 
@@ -124,7 +124,7 @@ contract CBJGateway is
      * @notice Modifier to check if withdrawals are not paused
      */
     modifier whenWithdrawalsNotPaused() {
-        if (withdrawalsArePaused) revert WithdrawalsArePaused();
+        _whenWithdrawalsNotPaused();
         _;
     }
 
@@ -401,12 +401,20 @@ contract CBJGateway is
     function _generateOperationId() internal returns (bytes32) {
         return
             keccak256(
-                abi.encodePacked(
+                abi.encode(
                     block.timestamp,
                     block.number,
                     msg.sender,
                     ++_operationCounter
                 )
             );
+    }
+
+    function _whenDepositsNotPaused() internal view {
+        if (depositsArePaused) revert DepositsArePaused();
+    }
+
+    function _whenWithdrawalsNotPaused() internal view {
+        if (withdrawalsArePaused) revert WithdrawalsArePaused();
     }
 }
