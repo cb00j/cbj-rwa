@@ -1,3 +1,3 @@
-module github.com/cb00j/cbj-rwa/apps/ws-server
+module github.com/cb00j/cbj-rwa/rwa-backend/apps/ws-server
 
 go 1.26.4

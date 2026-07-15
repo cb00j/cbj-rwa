@@ -5,6 +5,11 @@ use (
 	./apps/api
 	./apps/indexer
 	./apps/ws-server
+	./libs/contracts
 	./libs/core
 	./libs/database
+	./libs/errors
+	./libs/kafka
+	./libs/log
+	./libs/oss
 )
