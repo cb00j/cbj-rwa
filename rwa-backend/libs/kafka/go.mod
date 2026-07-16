@@ -1,6 +1,6 @@
 module github.com/cb00j/cbj-rwa/rwa-backend/libs/kafka
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/IBM/sarama v1.60.0 // indirect

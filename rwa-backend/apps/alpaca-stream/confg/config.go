@@ -23,8 +23,8 @@ type Config struct {
 
 // ChainConfig contains blockchain-related configuration
 type ChainConfig struct {
-	ChainId    uint64 `json:"chainId" yaml:"chainId"`
-	PocAddress string `json:"pocAddress" yaml:"pocAddress"`
+	ChainId      uint64 `json:"chainId" yaml:"chainId"`
+	OrderAddress string `json:"orderAddress" yaml:"orderAddress"`
 }
 
 // BackendConfig contains the backend wallet private key for signing transactions
