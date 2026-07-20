@@ -56,7 +56,7 @@ func (s *BlockService) GetLastProcessedBlock(ctx context.Context) (uint64, error
 }
 
 // UpdateLastProcessedBlockTx updates the last processed block number using the provided db or transaction.
-func (s *BlockService) UpdateLastProcessedBlock(ctx context.Context, tx *gorm.DB, blockNumber uint64, eventID uint64) error {
+func (s *BlockService) UpdateLastProcessedBlockTx(ctx context.Context, tx *gorm.DB, blockNumber uint64, eventID uint64) error {
 	q, u := gplus.NewQuery[rwa.EventClientRecord]()
 	q.Eq(&u.ChainID, s.chainID).
 		Set(&u.LastBlock, blockNumber).

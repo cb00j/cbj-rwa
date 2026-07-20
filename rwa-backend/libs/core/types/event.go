@@ -11,7 +11,7 @@ import (
 type ContractType string
 
 const (
-	ContractTypeGate       ContractType = "gateway"
+	ContractTypeGateway    ContractType = "gateway"
 	ContractTypeInstrument ContractType = "instrument"
 	ContractTypeOrder      ContractType = "order"
 )

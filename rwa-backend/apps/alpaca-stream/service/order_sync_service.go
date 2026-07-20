@@ -112,6 +112,13 @@ func (s *OrderSyncService) HandlePartialFill(ctx context.Context, data handlers.
 	s.handleFillOrPartialFill(ctx, data, false)
 }
 
+// HandleCanceled updates the order status to cancelled.
+func (s *OrderSyncService) HandleCanceled(ctx context.Context, data handlers.TradeUpdateMessageData) {
+	s.handleTerminalState(ctx, data, rwa.OrderStatusCancelled, "cancelled", func(order *rwa.Order) {
+		order.CancelledAt = parseTimestampOrNow(data.Timestamp)
+	})
+}
+
 func (s *OrderSyncService) handleFillOrPartialFill(ctx context.Context, data handlers.TradeUpdateMessageData, isFull bool) {
 	// TODO
 }
@@ -281,13 +288,13 @@ func (s *OrderSyncService) callMarkExecuted(parentCtx context.Context, order *rw
 		return
 	}
 
-	userAddr := onChainOrder.User
 	escrowAmountWei := onChainOrder.Amount // on-chain escrow in wei (18 decimals)
 
 	// Calculate refundAmount based on order side
 	// All on-chain amounts use 18 decimals
 	// filledQty and filledPrice are human-readable decimals from Alpaca
 	refundAmount := big.NewInt(0)
+	mintAmount := big.NewInt(0)
 	if order.Side == rwa.OrderSideBuy {
 		// Buy: refundAmount = escrowAmount - (filledQty * filledPrice) in 18 decimals
 		// actualCost = filledQty * filledPrice (USD value), convert to wei
@@ -296,9 +303,117 @@ func (s *OrderSyncService) callMarkExecuted(parentCtx context.Context, order *rw
 		if actualCostWei.Cmp(escrowAmountWei) > 0 {
 			refundAmount = new(big.Int).Sub(escrowAmountWei, actualCostWei)
 		}
+		mintAmount = decimalToWei(order.FilledQuantity, 18) // mint stock tokens for filledQty
 	}
 	// Sell: no USDM refund needed (escrowed stock tokens are consumed)
 
+	// Create OrderTransactor and send markExecuted
+	orderTransactor, err := contractRwa.NewOrderTransactor(contractAddr, ethClient)
+	if err != nil {
+		log.ErrorZ(ctx, "callMarkExecuted: failed to create OrderTransactor",
+			zap.Error(err), zap.Uint64("order_id", order.ID))
+		return
+	}
+
+	auth := bind.NewKeyedTransactor(s.privateKey, new(big.Int).SetUint64(chainId))
+
+	tx, err := orderTransactor.MarkExecuted(auth, orderId, refundAmount, mintAmount)
+	if err != nil {
+		log.ErrorZ(ctx, "callMarkExecuted: markExecuted failed",
+			zap.Error(err),
+			zap.Uint64("order_id", order.ID),
+			zap.String("client_order_id", order.ClientOrderID),
+			zap.String("refund_amount", refundAmount.String()))
+		return
+	}
+	txHash := tx.Hash().Hex()
+	log.InfoZ(ctx, "callMarkExecuted: markExecuted tx sent",
+		zap.Uint64("order_id", order.ID),
+		zap.String("client_order_id", order.ClientOrderID),
+		zap.String("tx_hash", txHash),
+		zap.String("refund_amount", refundAmount.String()))
+
+	// Save the execute tx hash and refund amount to the order record
+	refundDec := weiToDecimal(refundAmount, 18)
+	if err := s.db.WithContext(ctx).Model(&rwa.Order{}).
+		Where("id = ?", order.ID).
+		Updates(map[string]interface{}{
+			"execute_tx_hash": txHash,
+			"refund_amount":   refundDec,
+		}).Error; err != nil {
+		log.ErrorZ(ctx, "callMarkExecuted: failed to save execute_tx_hash",
+			zap.Error(err), zap.Uint64("order_id", order.ID))
+	}
+}
+
+// callCancelOrder sends a cancelOrder transaction to the on-chain OrderContract
+// to refund the user's escrowed assets (USDM for buy orders, stock tokens for sell orders).
+// Called when Alpaca confirms cancellation, rejection, or expiration.
+func (s *OrderSyncService) callCancelOrder(parentCtx context.Context, order *rwa.Order) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if traceID, ok := parentCtx.Value(log.TraceID).(string); ok {
+		ctx = context.WithValue(ctx, log.TraceID, traceID)
+	}
+
+	if s.privateKey == nil {
+		log.WarnZ(ctx, "callCancelOrder: backend private key not configured, skipping",
+			zap.Uint64("order_id", order.ID))
+		return
+	}
+	if s.conf.Chain == nil {
+		log.WarnZ(ctx, "callCancelOrder: chain config not set, skipping",
+			zap.Uint64("order_id", order.ID))
+		return
+	}
+
+	onChainOrderId, err := strconv.ParseUint(order.ClientOrderID, 10, 64)
+	if err != nil {
+		log.ErrorZ(ctx, "callCancelOrder: failed to parse clientOrderID as uint",
+			zap.Error(err),
+			zap.String("client_order_id", order.ClientOrderID),
+			zap.Uint64("order_id", order.ID))
+		return
+	}
+
+	chainId := s.conf.Chain.ChainId
+	ethClient := s.evmClient.MustGetHttpClient(chainId)
+	contractAddr := common.HexToAddress(s.conf.Chain.OrderAddress)
+	orderId := new(big.Int).SetUint64(onChainOrderId)
+
+	orderTransactor, err := contractRwa.NewOrderTransactor(contractAddr, ethClient)
+	if err != nil {
+		log.ErrorZ(ctx, "callCancelOrder: failed to create OrderTransactor",
+			zap.Error(err), zap.Uint64("order_id", order.ID))
+		return
+	}
+
+	auth := bind.NewKeyedTransactor(s.privateKey, new(big.Int).SetUint64(chainId))
+
+	tx, err := orderTransactor.CancelOrder(auth, orderId)
+	if err != nil {
+		log.ErrorZ(ctx, "callCancelOrder: contract call failed",
+			zap.Error(err),
+			zap.Uint64("order_id", order.ID),
+			zap.String("client_order_id", order.ClientOrderID),
+			zap.Uint64("on_chain_order_id", onChainOrderId))
+		return
+	}
+	txHash := tx.Hash().Hex()
+	log.InfoZ(ctx, "callCancelOrder: cancel tx sent",
+		zap.Uint64("order_id", order.ID),
+		zap.String("client_order_id", order.ClientOrderID),
+		zap.String("tx_hash", txHash))
+
+	// Save the cancel tx hash to the order record
+	if err := s.db.WithContext(ctx).Model(&rwa.Order{}).
+		Where("id = ?", order.ID).
+		Update("cancel_tx_hash", txHash).Error; err != nil {
+		log.ErrorZ(ctx, "callCancelOrder: failed to save cancel_tx_hash",
+			zap.Error(err),
+			zap.Uint64("order_id", order.ID),
+			zap.String("tx_hash", txHash))
+	}
 }
 
 // extractClientOrderID extracts the client_order_id from the Alpaca trade update data.
@@ -318,4 +433,26 @@ func decimalToWei(d decimal.Decimal, decimals int) *big.Int {
 	result := new(big.Int)
 	result.SetString(wei.StringFixed(0), 10)
 	return result
+}
+
+// weiToDecimal converts a *big.Int wei value to decimal.Decimal with the given decimals.
+func weiToDecimal(wei *big.Int, decimals int) decimal.Decimal {
+	factor := decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(decimals)))
+	return decimal.NewFromBigInt(wei, 0).Div(factor)
+}
+
+// parseTimestampOrNow attempts to parse an RFC3339 timestamp string.
+// Falls back to time.Now() if parsing fails or the string is empty.
+// Returns a pointer to time.Time for use with nullable time fields.
+func parseTimestampOrNow(ts string) *time.Time {
+	if ts == "" {
+		now := time.Now()
+		return &now
+	}
+	t, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		now := time.Now()
+		return &now
+	}
+	return &t
 }

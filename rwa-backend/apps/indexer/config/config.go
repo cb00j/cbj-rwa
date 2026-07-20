@@ -25,10 +25,10 @@ type BackendConfig struct {
 }
 
 type ChainInfo struct {
-	ChainId      uint64 `json:"chainId" yaml:"chainId"`
-	OrderAddress string `json:"orderAddress" yaml:"orderAddress"`
-	GateAddress  string `json:"gateAddress" yaml:"gateAddress"`
-	UsdmAddress  string `json:"usdmAddress" yaml:"usdmAddress"`
+	ChainId        uint64 `json:"chainId" yaml:"chainId"`
+	OrderAddress   string `json:"orderAddress" yaml:"orderAddress"`
+	GatewayAddress string `json:"gatewayAddress" yaml:"gatewayAddress"`
+	UsdmAddress    string `json:"usdmAddress" yaml:"usdmAddress"`
 }
 
 type IndexerConfig struct {
