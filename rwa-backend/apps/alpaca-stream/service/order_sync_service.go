@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -119,8 +120,252 @@ func (s *OrderSyncService) HandleCanceled(ctx context.Context, data handlers.Tra
 	})
 }
 
+// HandleRejected updates the order status to rejected with a reason.
+func (s *OrderSyncService) HandleRejected(ctx context.Context, data handlers.TradeUpdateMessageData) {
+	clientOrderID, err := extractClientOrderID(data)
+	if err != nil {
+		log.ErrorZ(ctx, "HandleRejected: failed to extract client_order_id", zap.Error(err))
+		return
+	}
+
+	order, err := s.findOrderByClientOrderID(ctx, clientOrderID)
+	if err != nil {
+		log.ErrorZ(ctx, "HandleRejected: failed to find order",
+			zap.Error(err), zap.String("client_order_id", clientOrderID))
+		return
+	}
+
+	// Idempotency check
+	if order.Status == rwa.OrderStatusRejected {
+		log.InfoZ(ctx, "HandleRejected: order already rejected, skipping",
+			zap.String("client_order_id", clientOrderID))
+		return
+	}
+
+	// If order was already filled, don't try to cancel on-chain
+	if order.Status == rwa.OrderStatusFilled {
+		log.WarnZ(ctx, "HandleRejected: order already filled, skipping reject",
+			zap.String("client_order_id", clientOrderID))
+		return
+	}
+
+	order.Status = rwa.OrderStatusRejected
+
+	// Add rejection reason to notes if available
+	rejectionReason := data.Order.RejectReason
+	if rejectionReason != "" {
+		if order.Notes != "" {
+			order.Notes += "; "
+		}
+		order.Notes += "Rejected by Alpaca: " + rejectionReason
+	} else {
+		if order.Notes != "" {
+			order.Notes += "; "
+		}
+		order.Notes += "Rejected by Alpaca"
+	}
+
+	if err := s.db.WithContext(ctx).Save(order).Error; err != nil {
+		log.ErrorZ(ctx, "HandleRejected: failed to update order",
+			zap.Error(err), zap.String("client_order_id", clientOrderID))
+		return
+	}
+
+	log.WarnZ(ctx, "HandleRejected: order status updated to rejected",
+		zap.String("client_order_id", clientOrderID),
+		zap.Uint64("order_id", order.ID),
+		zap.String("rejection_reason", rejectionReason))
+
+	s.publishOrderUpdate(ctx, order, "rejected")
+
+	// Call on-chain cancelOrder to refund escrowed assets to user
+	go s.callCancelOrder(ctx, order)
+}
+
+// HandleDoneForDay handles the done_for_day event.
+// GTC orders are not cancelled at the end of the day, but this event indicates that the market is closed for the day. This handler does not modify the order status, but can be used for logging or other purposes.
+func (s *OrderSyncService) HandleDoneForDay(ctx context.Context, data handlers.TradeUpdateMessageData) {
+	clientOrderID, err := extractClientOrderID(data)
+	if err != nil {
+		log.ErrorZ(ctx, "HandleDoneForDay: failed to extract client_order_id", zap.Error(err))
+		return
+	}
+
+	order, err := s.findOrderByClientOrderID(ctx, clientOrderID)
+	if err != nil {
+		log.ErrorZ(ctx, "HandleDoneForDay: failed to find order",
+			zap.Error(err), zap.String("client_order_id", clientOrderID))
+		return
+	}
+
+	log.InfoZ(ctx, "HandleDoneForDay: order done for day, will resume next trading day",
+		zap.String("client_order_id", clientOrderID),
+		zap.Uint64("order_id", order.ID),
+		zap.String("current_status", string(order.Status)),
+		zap.String("symbol", order.Symbol),
+		zap.String("timestamp", data.Timestamp))
+}
+
+// HandleExpired updates the order status to expired.
+func (s *OrderSyncService) HandleExpired(ctx context.Context, data handlers.TradeUpdateMessageData) {
+	s.handleTerminalState(ctx, data, rwa.OrderStatusExpired, "expired", func(order *rwa.Order) {
+		order.ExpiredAt = parseTimestampOrNow(data.Timestamp)
+	})
+}
+
 func (s *OrderSyncService) handleFillOrPartialFill(ctx context.Context, data handlers.TradeUpdateMessageData, isFull bool) {
-	// TODO
+	eventLabel := "HandleFill"
+	if !isFull {
+		eventLabel = "HandlePartialFill"
+	}
+
+	clientOrderID, err := extractClientOrderID(data)
+	if err != nil {
+		log.ErrorZ(ctx, eventLabel+": failed to extract client_order_id", zap.Error(err))
+		return
+	}
+
+	order, err := s.findOrderByClientOrderID(ctx, clientOrderID)
+	if err != nil {
+		log.ErrorZ(ctx, eventLabel+": failed to find order",
+			zap.Error(err), zap.String("client_order_id", clientOrderID))
+		return
+	}
+
+	execPrice, err := decimal.NewFromString(data.Price)
+	if err != nil {
+		log.ErrorZ(ctx, eventLabel+": failed to parse price",
+			zap.Error(err), zap.String("price", data.Price))
+		return
+	}
+
+	execQty, err := decimal.NewFromString(data.Qty)
+	if err != nil {
+		log.ErrorZ(ctx, eventLabel+": failed to parse qty",
+			zap.Error(err), zap.String("qty", data.Qty))
+		return
+	}
+
+	// Begin transaction for atomicity
+	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// indempotency check: if execution_id already exists, skip
+		if data.ExecutionID != "" {
+			q, u := gplus.NewQuery[rwa.OrderExecution]()
+			q.Eq(&u.ExecutionID, data.ExecutionID)
+			existing, dbRes := gplus.SelectOne(q, gplus.Db(tx))
+			if dbRes.Error == nil && existing != nil {
+				log.InfoZ(ctx, eventLabel+": execution_id already exists, skipping duplicate event",
+					zap.String("execution_id", data.ExecutionID),
+					zap.String("client_order_id", clientOrderID))
+				return nil
+			}
+
+			// If dbRes.Error is not a record not found error, it indicates a database error, so we should return it
+			if dbRes.Error != nil && !errors.Is(dbRes.Error, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("failed to check existing execution: %w", dbRes.Error)
+			}
+		}
+
+		// Create OrderExecution record
+		execution := rwa.OrderExecution{
+			OrderID:     order.ID,
+			ExecutionID: data.ExecutionID,
+			Quantity:    execQty,
+			Price:       execPrice,
+			Provider:    "alpaca",
+			ExecutedAt:  *parseTimestampOrNow(data.Timestamp),
+		}
+
+		if dbRes := gplus.Insert(&execution, gplus.Db(tx)); dbRes.Error != nil {
+			return fmt.Errorf("failed to insert order execution: %w", dbRes.Error)
+		}
+
+		// Update order filled quantity and price
+		// New filled quantity = previous filled + this execution qty
+		newFilledQty := order.FilledQuantity.Add(execQty)
+
+		// Compute volume-weighted average price (VWAP) for filled price
+		// VWAP = (old_filled_qty * old_filled_price + exec_qty * exec_price) / new_filled_qty
+		if newFilledQty.IsPositive() {
+			order.FilledPrice = order.FilledPrice.Mul(order.FilledQuantity).Add(execPrice.Mul(execQty)).Div(newFilledQty)
+		}
+		order.FilledQuantity = newFilledQty
+		order.RemainingQuantity = order.Quantity.Sub(newFilledQty)
+
+		// Use Alpaca's authoritative filled_avg_price if available
+		if data.Order.FilledAvgPrice != "" {
+			if avgPrice, err := decimal.NewFromString(data.Order.FilledAvgPrice); err == nil {
+				order.FilledPrice = avgPrice
+			}
+		}
+
+		// Use Alpaca's authoritative filled_qty for total filled if available
+		if data.Order.FilledQty != "" {
+			if fq, err := decimal.NewFromString(data.Order.FilledQty); err == nil {
+				order.FilledQuantity = fq
+				order.RemainingQuantity = order.Quantity.Sub(fq)
+			}
+		}
+
+		// Determine status based on fill completeness
+		if order.FilledQuantity.GreaterThanOrEqual(order.Quantity) {
+			order.Status = rwa.OrderStatusFilled
+		} else {
+			order.Status = rwa.OrderStatusPartiallyFilled
+		}
+
+		// Extract external order ID if not already set
+		if order.ExternalOrderID == "" && data.Order.ID != "" {
+			order.ExternalOrderID = data.Order.ID
+		}
+
+		if err := tx.Save(order).Error; err != nil {
+			return fmt.Errorf("failed to update order: %w", err)
+		}
+
+		return nil
+	})
+
+	if txErr != nil {
+		log.ErrorZ(ctx, eventLabel+": transaction failed",
+			zap.Error(txErr),
+			zap.String("client_order_id", clientOrderID),
+			zap.String("execution_id", data.ExecutionID),
+			zap.String("event", data.Event),
+			zap.String("price", data.Price),
+			zap.String("qty", data.Qty),
+			zap.String("alpaca_order_id", data.Order.ID),
+			zap.String("filled_avg_price", data.Order.FilledAvgPrice),
+			zap.String("filled_qty", data.Order.FilledQty),
+			zap.String("timestamp", data.Timestamp),
+		)
+
+		// Persist failed event to failed_events table for later recovery
+		s.persistFailedEvent(ctx, clientOrderID, data, txErr)
+		return
+	}
+
+	log.InfoZ(ctx, eventLabel+": order updated successfully",
+		zap.String("client_order_id", clientOrderID),
+		zap.Uint64("order_id", order.ID),
+		zap.String("status", string(order.Status)),
+		zap.String("filled_quantity", order.FilledQuantity.String()),
+		zap.String("filled_price", order.FilledPrice.String()),
+		zap.String("exec_price", execPrice.String()),
+		zap.String("exec_qty", execQty.String()),
+		zap.String("execution_id", data.ExecutionID))
+
+	if isFull {
+		s.publishOrderUpdate(ctx, order, "fill")
+	} else {
+		s.publishOrderUpdate(ctx, order, "partial_fill")
+	}
+
+	// When fully filled, call on-chain markExecuted asynchronously
+	if order.Status == rwa.OrderStatusFilled {
+		go s.callMarkExecuted(ctx, order)
+	}
+
 }
 
 // findOrderByClientOrderID looks up an order in the database by client_order_id.
@@ -283,7 +528,7 @@ func (s *OrderSyncService) callMarkExecuted(parentCtx context.Context, order *rw
 
 	onChainOrder, err := orderCaller.GetOrder(&bind.CallOpts{Context: ctx}, orderId)
 	if err != nil {
-		log.ErrorZ(ctx, "callMarkExecuted: failed to create OrderCaller",
+		log.ErrorZ(ctx, "callMarkExecuted: failed to get Order",
 			zap.Error(err), zap.Uint64("order_id", order.ID))
 		return
 	}
@@ -300,12 +545,20 @@ func (s *OrderSyncService) callMarkExecuted(parentCtx context.Context, order *rw
 		// actualCost = filledQty * filledPrice (USD value), convert to wei
 		actualCost := order.FilledQuantity.Mul(order.FilledPrice)
 		actualCostWei := decimalToWei(actualCost, 18)
-		if actualCostWei.Cmp(escrowAmountWei) > 0 {
+		if escrowAmountWei.Cmp(actualCostWei) > 0 {
 			refundAmount = new(big.Int).Sub(escrowAmountWei, actualCostWei)
 		}
 		mintAmount = decimalToWei(order.FilledQuantity, 18) // mint stock tokens for filledQty
+	} else {
+		// Sell: mintAmount = filledQty * filledPrice
+		proceeds := order.FilledQuantity.Mul(order.FilledPrice)
+		mintAmount = decimalToWei(proceeds, 18)
+		// if order is partial filled,should refund the unsold stock tokens
+		filledQtyWei := decimalToWei(order.FilledQuantity, 18)
+		if escrowAmountWei.Cmp(filledQtyWei) > 0 {
+			refundAmount = new(big.Int).Sub(escrowAmountWei, filledQtyWei)
+		}
 	}
-	// Sell: no USDM refund needed (escrowed stock tokens are consumed)
 
 	// Create OrderTransactor and send markExecuted
 	orderTransactor, err := contractRwa.NewOrderTransactor(contractAddr, ethClient)
@@ -455,4 +708,40 @@ func parseTimestampOrNow(ts string) *time.Time {
 		return &now
 	}
 	return &t
+}
+
+// persistFailedEvent saves a failed WebSocket trade update event to the failed_events table
+// so it can be recovered or retried later.
+func (s *OrderSyncService) persistFailedEvent(ctx context.Context, clientOrderID string, data handlers.TradeUpdateMessageData, originalErr error) {
+	eventDataJSON, err := json.Marshal(data)
+	if err != nil {
+		log.ErrorZ(ctx, "persistFailedEvent: failed to marshal event data",
+			zap.Error(err),
+			zap.String("client_order_id", clientOrderID))
+		return
+	}
+
+	failedEvent := rwa.FailedEvent{
+		ClientOrderID: clientOrderID,
+		EventType:     data.Event,
+		ExecutionID:   data.ExecutionID,
+		EventData:     string(eventDataJSON),
+		ErrorMessage:  originalErr.Error(),
+		Source:        "alpaca",
+		Status:        "pending",
+	}
+
+	if dbRes := gplus.Insert(&failedEvent, gplus.Db(s.db.WithContext(ctx))); dbRes.Error != nil {
+		log.ErrorZ(ctx, "persistFailedEvent: failed to insert failed event record",
+			zap.Error(dbRes.Error),
+			zap.String("client_order_id", clientOrderID),
+			zap.String("event_type", data.Event))
+		return
+	}
+
+	log.InfoZ(ctx, "persistFailedEvent: failed event persisted for later recovery",
+		zap.Uint64("failed_event_id", failedEvent.ID),
+		zap.String("client_order_id", clientOrderID),
+		zap.String("event_type", data.Event),
+		zap.String("execution_id", data.ExecutionID))
 }
