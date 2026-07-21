@@ -42,7 +42,7 @@ func provideHandlers(
 		}
 	}
 
-	orderSubmittedHandler, err := handlers.NewHandleOrderSubmitted(tradeService, conf.Chain.UsdmAddress, evmClient, conf.Chain.ChainId, conf.Chain.PocAddress, backendPK)
+	orderSubmittedHandler, err := handlers.NewHandleOrderSubmitted(tradeService, conf.Chain.UsdmAddress, evmClient, conf.Chain.ChainId, conf.Chain.OrderAddress, backendPK)
 	if err != nil {
 		return nil, err
 	}
