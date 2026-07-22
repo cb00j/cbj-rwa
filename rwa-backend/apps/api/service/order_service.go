@@ -64,7 +64,7 @@ func (s *OrderService) GetOrders(ctx context.Context, filter rwa.OrderFilter) ([
 		countQuery.Le(&cu.CreatedAt, filter.EndTime)
 	}
 
-	total, dbRes := gplus.SelectCount[rwa.Order](countQuery, gplus.Db(s.db))
+	total, dbRes := gplus.SelectCount(countQuery, gplus.Db(s.db))
 	if dbRes.Error != nil {
 		log.ErrorZ(ctx, "failed to count orders", zap.Error(dbRes.Error))
 		return nil, 0, dbRes.Error

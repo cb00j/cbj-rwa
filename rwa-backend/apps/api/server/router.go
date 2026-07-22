@@ -8,7 +8,6 @@ import (
 	"github.com/cb00j/cbj-rwa/rwa-backend/apps/api/controller"
 	"github.com/cb00j/cbj-rwa/rwa-backend/apps/api/server/middleware"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/redis_cache"
-	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/web"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/log"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
@@ -67,20 +66,6 @@ func NewRouter(conf *config.Config, commonController *controller.CommonControlle
 	router.initStock(g, stockController)
 	router.initOrder(g, orderController)
 	return ret, nil
-}
-
-func (r *Router) auth(c *gin.Context) {
-	if r.conf.Server.Env == "dev" || r.conf.Server.ApiKeys == nil || len(r.conf.Server.ApiKeys) == 0 {
-		c.Next()
-		return
-	}
-	key := c.GetHeader(apiHeaderKey)
-	if key == "" || r.apiKeyMap[key] == false {
-		web.ResponseUnAuthorizedError(c)
-		c.Abort()
-		return
-	}
-	c.Next()
 }
 
 func (r *Router) initCommon(group *gin.RouterGroup, c *controller.CommonController) {

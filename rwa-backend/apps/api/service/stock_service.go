@@ -26,7 +26,7 @@ func (s *StockService) GetStockList(ctx context.Context, page, pageSize int) (*d
 	// Count
 	countQuery, cu := gplus.NewQuery[rwa.Stock]()
 	countQuery.Eq(&cu.Status, rwa.StockStatusActive)
-	total, dbRes := gplus.SelectCount[rwa.Stock](countQuery, gplus.Db(s.db))
+	total, dbRes := gplus.SelectCount(countQuery, gplus.Db(s.db))
 	if dbRes.Error != nil {
 		log.ErrorZ(ctx, "failed to count stocks", zap.Error(dbRes.Error))
 		return nil, dbRes.Error
