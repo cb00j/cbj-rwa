@@ -161,16 +161,10 @@ func (k *Consumer) run() {
 	}()
 
 	go func() {
-		for {
-			select {
-			case err, ok := <-k.client.Errors():
-				if !ok {
-					log.InfoZ(context.Background(), "consume kafka err chan closed")
-					return
-				}
-				log.ErrorZ(context.Background(), "consume kafka message error", zap.Error(err))
-			}
+		for err := range k.client.Errors() {
+			log.ErrorZ(context.Background(), "consume kafka message error", zap.Error(err))
 		}
+		log.InfoZ(context.Background(), "consume kafka err chan closed")
 	}()
 }
 
