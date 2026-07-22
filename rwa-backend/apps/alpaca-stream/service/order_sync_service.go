@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/shopspring/decimal"
 
-	config "github.com/cb00j/cbj-rwa/rwa-backend/apps/alpaca-stream/confg"
+	config "github.com/cb00j/cbj-rwa/rwa-backend/apps/alpaca-stream/config"
 	"github.com/cb00j/cbj-rwa/rwa-backend/apps/alpaca-stream/handlers"
 	contractRwa "github.com/cb00j/cbj-rwa/rwa-backend/libs/contracts/rwa"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/evm_helper"
