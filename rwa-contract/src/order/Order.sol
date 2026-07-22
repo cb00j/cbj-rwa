@@ -173,7 +173,7 @@ contract OrderContract is
      * @param side Buy/Sell
      * @param orderType Market/Limit
      * @param price Price (18 decimals); for Market, it's the acceptable worst price; for Limit, it is the limit price
-     * @dev The user must pre-approve this contract to spend the corresponding asset (Buy: USDM price*qty; Sell: the symbol's PocToken qty)
+     * @dev The user must pre-approve this contract to spend the corresponding asset (Buy: USDM price*qty; Sell: the symbol's CBJToken qty)
      */
     function submitOrder(
         string calldata symbol,

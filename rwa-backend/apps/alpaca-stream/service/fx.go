@@ -8,5 +8,6 @@ func LoadModule() fx.Option {
 			NewOrderSyncService,
 			NewAlpacaWebSocketService,
 		),
+		fx.Invoke(func(_ *AlpacaWebSocketService) {}),
 	)
 }

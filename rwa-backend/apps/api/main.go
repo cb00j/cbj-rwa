@@ -2,22 +2,21 @@ package main
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"fmt"
 	"os"
-	"strings"
 	"time"
 
-	config "github.com/cb00j/cbj-rwa/rwa-backend/apps/alpaca-stream/config"
-	"github.com/cb00j/cbj-rwa/rwa-backend/apps/alpaca-stream/service"
-	"github.com/cb00j/cbj-rwa/rwa-backend/apps/alpaca-stream/types"
+	"github.com/cb00j/cbj-rwa/rwa-backend/apps/api/config"
+	"github.com/cb00j/cbj-rwa/rwa-backend/apps/api/controller"
+	"github.com/cb00j/cbj-rwa/rwa-backend/apps/api/server"
+	"github.com/cb00j/cbj-rwa/rwa-backend/apps/api/service"
+	"github.com/cb00j/cbj-rwa/rwa-backend/apps/api/types"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/evm_helper"
-	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/kafka_helper"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/redis_cache"
+	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/trade"
+	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/web"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/database"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/errors"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/log"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/urfave/cli/v3"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
@@ -26,14 +25,14 @@ import (
 
 func main() {
 	app := &cli.Command{
-		Name:        "alpaca-stream",
-		Description: "Alpaca WebSocket streaming service",
+		Name:        "rwa-api",
+		Description: "rwa api",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    types.APP,
-				Value:   types.AppAlpacaWs,
+				Value:   types.AppApi,
 				Aliases: []string{"a"},
-				Usage:   "choice the start app: alpaca-stream",
+				Usage:   "choice the start app: api",
 			},
 			&cli.StringFlag{
 				Name:    types.ConfigFile,
@@ -46,8 +45,8 @@ func main() {
 			cliArgs := types.NewCli(c)
 			mainCtx := context.WithValue(ctx, log.TraceID, cliArgs.App)
 			switch cliArgs.App {
-			case types.AppAlpacaWs:
-				return startAlpacaWs(mainCtx, cliArgs)
+			case types.AppApi:
+				return startApp(mainCtx, cliArgs)
 			default:
 				err := errors.NewErr("invalid app: %s", c.String(types.APP))
 				return err.Underlying()
@@ -59,7 +58,7 @@ func main() {
 	}
 }
 
-func startAlpacaWs(ctx context.Context, cli *types.Cli) error {
+func startApp(ctx context.Context, cli *types.Cli) error {
 	conf, err := config.NewConfig(cli.ConfigFilePath)
 	if err != nil {
 		log.ErrorZ(ctx, "failed to load config file", zap.String("path", cli.ConfigFilePath), zap.Error(err))
@@ -68,32 +67,28 @@ func startAlpacaWs(ctx context.Context, cli *types.Cli) error {
 	log.InitLogger(conf.Logger)
 	log.InfoZ(ctx, "load config file success", zap.String("path", cli.ConfigFilePath))
 
+	// Initialize custom validator
+	_, err = web.BindGinCusValidator(ctx, "en")
+	if err != nil {
+		log.ErrorZ(ctx, "failed to initialize custom validator", zap.Error(err))
+		return err
+	}
 	cusLog := fx.WithLogger(func() fxevent.Logger {
 		return &fxevent.ZapLogger{Logger: log.Logger()}
 	})
 	app := fx.New(
 		cusLog,
 		config.LoadModule(conf),
-		database.LoadModule(conf.Db),
-		evm_helper.LoadModule(conf.RpcInfo),
-		redis_cache.LoadModule(conf.Redis),
-		kafka_helper.LoadModule(conf.Kafka),
-		fx.Provide(provideBackendPrivateKey),
+		server.LoadModule(),
 		service.LoadModule(),
+		controller.LoadModule(),
+		redis_cache.LoadModule(conf.Redis),
+		evm_helper.LoadModule(conf.RpcInfo),
+		database.LoadModule(conf.Db),
+		trade.LoadModule(conf.Alpaca),
 		fx.StartTimeout(120*time.Second),
 		fx.StopTimeout(120*time.Second),
 	)
-	log.InfoZ(ctx, "Begin to start alpaca websocket service")
 	app.Run()
 	return nil
-}
-
-// provideBackendPrivateKey parses the backend wallet private key from config,
-// for use in on-chain transactions (markExecuted/cancelOrder).
-func provideBackendPrivateKey(conf *config.Config) (*ecdsa.PrivateKey, error) {
-	if conf.Backend == nil || conf.Backend.PrivateKey == "" {
-		return nil, fmt.Errorf("backend private key not configured")
-	}
-	pkHex := strings.TrimPrefix(conf.Backend.PrivateKey, "0x")
-	return crypto.HexToECDSA(pkHex)
 }

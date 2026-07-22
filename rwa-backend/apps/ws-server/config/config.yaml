@@ -1,0 +1,26 @@
+appName: "WS Server"
+server:
+  port: 8082
+  basePath: /api/v1/ws
+
+redis:
+  hosts:
+    - "192.168.5.5:6379"
+  password: ""
+  db: 0
+
+logger:
+  level: "debug"
+  encoderType: "console"
+  outputType: "all"
+  maxAge: 30
+  enableColor: true
+
+kafka:
+  enabled: true
+  brokers:
+    - "192.168.5.241:9092"
+    - "192.168.5.242:9092"
+    - "192.168.5.243:9092"
+  orderUpdatePartitions: 3
+  barPartitions: 3

@@ -1,37 +1,46 @@
 appName: "Alpaca WebSocket Service"
 
 alpaca:
-  api_key: "PKCO3XINYF5OEDNYX2QK76P7TL"
-  api_secret: "H7JJw42qDoA6H1ETGa8DtvzKi7esneM1iaykzG1tXGrm"
-  ws_url: "wss://paper-api.alpaca.markets/stream" # For trade updates
-  ws_data_url: "wss://stream.data.alpaca.markets/v2/iex" # For market data (bars, quotes, trades)
+  api_key: "PKDY3DRU4Z6EYNV5N632H3VBXZ"
+  api_secret: "GJD6KZj6sbYKpUDSo1Gc77vhGaQyWqzM7abjGfyS4o57"
+  ws_url: "wss://paper-api.alpaca.markets/stream"
+  ws_data_url: "wss://stream.data.alpaca.markets/v2/iex"
 
 rpcInfo:
   31337:
-    rpcUrl: "https://127.0.0.1:8545"
-    wssUrl: "wss://127.0.0.1:8545"
-    nativeTokenSymbol: "Anvil"
+    rpcUrl: "http://127.0.0.1:8545"
+    wssUrl: "ws://127.0.0.1:8545"
+    nativeTokenSymbol: "ETH"
     nativeTokenDecimals: 18
 
 chain:
   chainId: 31337 # Anvil chain ID
-  orderAddress: "0x0000000000000000000000000000000000000000" # OrderContract proxy address (deploy后替换)
+  orderAddress: "0x5C7c905B505f0Cf40Ab6600d05e677F717916F6B" # OrderContract proxy address (deploy后替换)
 
 backend:
-  privateKey: "" # Backend wallet private key (BACKEND_ROLE on OrderContract)
+  privateKey: "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" # Backend wallet private key (BACKEND_ROLE on OrderContract)
 
 db:
   host: "192.168.5.180"
   port: 5432
   username: "root"
   password: "root"
-  database: "anchored"
+  database: "rwa"
   maxIdleConns: 20
   maxOpenConns: 200
   logLevel: 2
   sqlSlowThresholdMill: 10000
   migrationPath: "file://migrations/rwa"
   sslMode: "disable"
+
+kafka:
+  enabled: true
+  brokers:
+    - "192.168.5.241:9092"
+    - "192.168.5.242:9092"
+    - "192.168.5.243:9092"
+  orderUpdatePartitions: 3
+  barPartitions: 3
 
 logger:
   level: "debug"

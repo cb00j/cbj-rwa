@@ -2,22 +2,22 @@ appName: "RWA Indexer Direct"
 
 chain:
   chainId: 31337
-  orderAddress: "0x0000000000000000000000000000000000000000" # OrderContract proxy address (deploy后替换)
-  usdmAddress: "0x0000000000000000000000000000000000000000" # USDM token address (deploy后替换)
+  orderAddress: "0x5C7c905B505f0Cf40Ab6600d05e677F717916F6B" # OrderContract proxy address (deploy后替换)
+  usdmAddress: "0x006EeA17e8DFb0b59B9208b2fAD1C791375fE17d" # USDM token address (deploy后替换)
 
 rpcInfo:
   31337:
-    rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545"
-    wssUrl: "wss://bsc-testnet-rpc.publicnode.com"
-    nativeTokenSymbol: BNB
+    rpcUrl: "http://127.0.0.1:8545"
+    wssUrl: "ws://127.0.0.1:8545"
+    nativeTokenSymbol: "ETH"
     nativeTokenDecimals: 18
 
 db:
-  host: "127.0.0.1"
+  host: "192.168.5.180"
   port: 5432
   username: "root"
   password: "root"
-  database: "anchored"
+  database: "rwa"
   maxIdleConns: 20
   maxOpenConns: 200
   logLevel: 2
@@ -33,13 +33,22 @@ logger:
   enableColor: true
 
 backend:
-  privateKey: "" # Backend wallet private key (same as alpaca-stream, for cancelOrder on PlaceOrder failure)
+  privateKey: "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" # Backend wallet private key,remove 0x (same as alpaca-stream, for cancelOrder on PlaceOrder failure)
 
 alpaca:
-  api_key: "PKCO3XINYF5OEDNYX2QK76P7TL"
-  api_secret: "H7JJw42qDoA6H1ETGa8DtvzKi7esneM1iaykzG1tXGrm"
+  api_key: "PKDY3DRU4Z6EYNV5N632H3VBXZ"
+  api_secret: "GJD6KZj6sbYKpUDSo1Gc77vhGaQyWqzM7abjGfyS4o57"
   base_url: "https://paper-api.alpaca.markets"
   data_url: "https://data.alpaca.markets"
+
+kafka:
+  enabled: true
+  brokers:
+    - "192.168.5.241:9092"
+    - "192.168.5.242:9092"
+    - "192.168.5.243:9092"
+  orderUpdatePartitions: 3
+  barPartitions: 3
 
 indexer:
   pollInterval: 3

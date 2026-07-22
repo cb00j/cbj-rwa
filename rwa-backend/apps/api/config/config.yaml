@@ -1,33 +1,33 @@
 appName: "RWA API"
 server:
   port: 8000
-  env : dev
-  basePath : /api/v1
-  apiKeys :
+  env: dev
+  basePath: /api/v1
+  apiKeys:
     - 099ba6fc-8da2-4d83-b3e9-a43813e471d3
-  ginMode : debug
+  ginMode: debug
 
 rpcInfo:
-    97:
-      rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545"
-      wssUrl: "wss://bsc-testnet-rpc.publicnode.com"
-      nativeTokenSymbol: BNB
-      nativeTokenDecimals: 18
+  31337:
+    rpcUrl: "http://127.0.0.1:8545"
+    wssUrl: "ws://127.0.0.1:8545"
+    nativeTokenSymbol: "ETH"
+    nativeTokenDecimals: 18
 
 # chain config moved to indexer service
 
 redis:
   hosts:
-    - "127.0.0.1:6379"
+    - "192.168.5.5:6379"
   password: ""
   db: 0
 
 db:
-  host: "127.0.0.1"
+  host: "192.168.5.180"
   port: 5432
   username: "root"
   password: "root"
-  database: "anchored"
+  database: "rwa"
   maxIdleConns: 20
   maxOpenConns: 200
   logLevel: 2
@@ -36,11 +36,11 @@ db:
   sslMode: "disable"
 
 alpaca:
-  api_key: "PKCO3XINYF5OEDNYX2QK76P7TL"
-  api_secret: "H7JJw42qDoA6H1ETGa8DtvzKi7esneM1iaykzG1tXGrm"
+  api_key: "PKDY3DRU4Z6EYNV5N632H3VBXZ"
+  api_secret: "GJD6KZj6sbYKpUDSo1Gc77vhGaQyWqzM7abjGfyS4o57"
   base_url: "https://paper-api.alpaca.markets"
   data_url: "https://data.alpaca.markets"
-  
+
 logger:
   level: "debug"
   encoderType: "console"

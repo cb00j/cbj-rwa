@@ -43,7 +43,7 @@ type Client struct {
 type MessageHandler func(ctx context.Context, message json.RawMessage) error
 
 // NewClient creates a new WebSocket client
-func NewClient(url, apiKey, apiSecret string) *Client {
+func NewClient(apiKey, apiSecret, url string) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Client{
 		url:                  url,
@@ -338,6 +338,8 @@ func (c *Client) handleMessage(ctx context.Context, message []byte) error {
 				}
 			}
 		}
+
+		return nil
 	}
 
 	// Handle listening stream (subscription confirmation)
