@@ -189,7 +189,7 @@ contract OrderContract is
         ICBJTokenLike token = side == Side.BUY ? usdm : symbolToToken[symbol];
         if (address(0) == address(token)) revert ZeroAddress();
 
-        uint amount = side == Side.BUY ? price * qty : qty;
+        uint amount = side == Side.BUY ? (price * qty) / 1e18 : qty;
         if (amount == 0) revert AmountZero();
 
         require(
