@@ -1,0 +1,1 @@
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS backend_refund_tx_hash VARCHAR(66);

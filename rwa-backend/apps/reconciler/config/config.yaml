@@ -1,7 +1,7 @@
 appName: "Reconciler"
 
 db:
-  host: "127.0.0.1"
+  host: "192.168.5.180"
   port: 5432
   username: "root"
   password: "root"
@@ -22,7 +22,7 @@ rpcInfo:
 
 chain:
   chainId: 31337
-  orderAddress: "0x0000000000000000000000000000000000000000" # 部署后替换
+  orderAddress: "0x5C7c905B505f0Cf40Ab6600d05e677F717916F6B" # 部署后替换
 
 backend:
   privateKey: "" # 必须是真正持有 OrderContract.BACKEND_ROLE 的那把私钥

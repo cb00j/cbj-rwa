@@ -108,6 +108,13 @@ contract OrderContract is
         Status previousStatus
     );
 
+    // Backend refund event, when the order is failed to be placed in stock provider
+    event OrderBackendRefunded(
+        uint256 indexed orderId,
+        address indexed user,
+        uint256 amount
+    );
+
     // ============Errors============
     error AmountZero();
     error NotOwner();
@@ -316,6 +323,23 @@ contract OrderContract is
             order.timeInForce,
             previousStatus
         );
+    }
+
+    /**
+     * @notice Backend refunds the order and refunds all escrowed funds to the user (when place order failed in stock provider)
+     */
+    function backendRefund(
+        uint orderId
+    ) external onlyRole(BACKEND_ROLE) nonReentrant {
+        Order storage order = orders[orderId];
+        if (order.user == address(0)) revert NotFound();
+        if (order.status != Status.PENDING) revert InvalidStatus();
+        order.status = Status.CANCELLED;
+        require(
+            ICBJTokenLike(order.escrowAsset).transfer(order.user, order.amount),
+            "TRANSFER_FAIL"
+        );
+        emit OrderBackendRefunded(orderId, order.user, order.amount);
     }
 
     // ============ Views ============

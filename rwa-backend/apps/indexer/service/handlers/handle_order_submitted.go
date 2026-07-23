@@ -239,9 +239,9 @@ func (h *HandleOrderSubmitted) HandleEvent(ctx context.Context, tx *gorm.DB, eve
 				return saveErr
 			}
 
-			// Call on-chain cancelOrder asynchronously to refund escrowed assets.
+			// Call on-chain backendRefund asynchronously to refund escrowed assets.
 			// This must happen outside the DB transaction to avoid blocking.
-			go h.callCancelOrder(parsedEvent.OrderId)
+			go h.callBackendRefund(parsedEvent.OrderId)
 			// Alpaca failure is not a processing error — order is saved as Rejected.
 		}
 
@@ -304,15 +304,15 @@ func (h *HandleOrderSubmitted) HandleEvent(ctx context.Context, tx *gorm.DB, eve
 	return nil
 }
 
-// callCancelOrder sends a cancelOrder transaction to the on-chain OrderContract
+// callBackendRefund sends a backendRefund transaction to the on-chain OrderContract
 // to refund the user's escrowed assets when Alpaca PlaceOrder fails.
 // Runs asynchronously to avoid blocking the indexer's DB transaction.
-func (h *HandleOrderSubmitted) callCancelOrder(orderId *big.Int) {
+func (h *HandleOrderSubmitted) callBackendRefund(orderId *big.Int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	if h.privateKey == nil {
-		log.WarnZ(ctx, "callCancelOrder: backend private key not configured, skipping",
+		log.WarnZ(ctx, "callBackendRefund: backend private key not configured, skipping",
 			zap.String("order_id", orderId.String()))
 		return
 	}
@@ -320,26 +320,26 @@ func (h *HandleOrderSubmitted) callCancelOrder(orderId *big.Int) {
 	ethClient := h.evmClient.MustGetHttpClient(h.chainID)
 	orderTransactor, err := contractRwa.NewOrderTransactor(h.orderAddress, ethClient)
 	if err != nil {
-		log.ErrorZ(ctx, "callCancelOrder: failed to create OrderTransactor",
+		log.ErrorZ(ctx, "callBackendRefund: failed to create OrderTransactor",
 			zap.Error(err), zap.String("order_id", orderId.String()))
 		return
 	}
 
 	auth, err := bind.NewKeyedTransactorWithChainID(h.privateKey, new(big.Int).SetUint64(h.chainID))
 	if err != nil {
-		log.ErrorZ(ctx, "callCancelOrder: failed to create transact opts",
+		log.ErrorZ(ctx, "callBackendRefund: failed to create transact opts",
 			zap.Error(err), zap.String("order_id", orderId.String()))
 		return
 	}
 
-	tx, err := orderTransactor.CancelOrder(auth, orderId)
+	tx, err := orderTransactor.BackendRefund(auth, orderId)
 	if err != nil {
-		log.ErrorZ(ctx, "callCancelOrder: contract call failed",
+		log.ErrorZ(ctx, "callBackendRefund: contract call failed",
 			zap.Error(err), zap.String("order_id", orderId.String()))
 		return
 	}
 
-	log.InfoZ(ctx, "callCancelOrder: cancel tx sent for rejected order",
+	log.InfoZ(ctx, "callBackendRefund: backend refund tx sent for rejected order",
 		zap.String("order_id", orderId.String()),
 		zap.String("tx_hash", tx.Hash().Hex()))
 }

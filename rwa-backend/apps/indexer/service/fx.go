@@ -62,6 +62,11 @@ func provideHandlers(
 		return nil, err
 	}
 
+	orderBackendRefundedHandler, err := handlers.NewHandleOrderBackendRefunded()
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: Add Gate contract event handlers once Gate Go bindings are generated.
 	// Gate.sol emits these events: PendingDeposit, DepositProcessed, PendingWithdraw,
 	// WithdrawalProcessed, MinimumDepositAmountSet, MinimumWithdrawalAmountSet,
@@ -77,6 +82,7 @@ func provideHandlers(
 		orderCancelledHandler,
 		cancelRequestedHandler,
 		orderExecutedHandler,
+		orderBackendRefundedHandler,
 	}, nil
 }
 

@@ -39,33 +39,34 @@ type GetOrderExecutionsResponse struct {
 
 // OrderDTO JSON representation of an order
 type OrderDTO struct {
-	ID                uint64 `json:"id"`
-	ClientOrderID     string `json:"clientOrderId"`
-	AccountID         uint64 `json:"accountId"`
-	Symbol            string `json:"symbol"`
-	AssetType         string `json:"assetType"`
-	Side              string `json:"side"`
-	Type              string `json:"type"`
-	Quantity          string `json:"quantity"`
-	Price             string `json:"price"`
-	StopPrice         string `json:"stopPrice"`
-	Status            string `json:"status"`
-	FilledQuantity    string `json:"filledQuantity"`
-	FilledPrice       string `json:"filledPrice"`
-	RemainingQuantity string `json:"remainingQuantity"`
-	ContractTxHash    string `json:"contractTxHash"`
-	ExternalOrderID   string `json:"externalOrderId"`
-	Provider          string `json:"provider"`
-	Commission        string `json:"commission"`
-	CommissionAsset   string `json:"commissionAsset"`
-	Metadata          string `json:"metadata,omitempty"`
-	Notes             string `json:"notes,omitempty"`
-	CreatedAt         int64  `json:"createdAt,omitempty" example:"1704067200"`
-	UpdatedAt         int64  `json:"updatedAt,omitempty" example:"1704067200"`
-	SubmittedAt       int64  `json:"submittedAt,omitempty" example:"1704067200"`
-	FilledAt          int64  `json:"filledAt,omitempty" example:"1704067200"`
-	CancelledAt       int64  `json:"cancelledAt,omitempty" example:"1704067200"`
-	ExpiredAt         int64  `json:"expiredAt,omitempty" example:"1704067200"`
+	ID                  uint64 `json:"id"`
+	ClientOrderID       string `json:"clientOrderId"`
+	AccountID           uint64 `json:"accountId"`
+	Symbol              string `json:"symbol"`
+	AssetType           string `json:"assetType"`
+	Side                string `json:"side"`
+	Type                string `json:"type"`
+	Quantity            string `json:"quantity"`
+	Price               string `json:"price"`
+	StopPrice           string `json:"stopPrice"`
+	Status              string `json:"status"`
+	FilledQuantity      string `json:"filledQuantity"`
+	FilledPrice         string `json:"filledPrice"`
+	RemainingQuantity   string `json:"remainingQuantity"`
+	ContractTxHash      string `json:"contractTxHash"`
+	ExternalOrderID     string `json:"externalOrderId"`
+	Provider            string `json:"provider"`
+	Commission          string `json:"commission"`
+	CommissionAsset     string `json:"commissionAsset"`
+	Metadata            string `json:"metadata,omitempty"`
+	Notes               string `json:"notes,omitempty"`
+	BackendRefundTxHash string `gorm:"column:backend_refund_tx_hash" json:"backendRefundTxHash"`
+	CreatedAt           int64  `json:"createdAt,omitempty" example:"1704067200"`
+	UpdatedAt           int64  `json:"updatedAt,omitempty" example:"1704067200"`
+	SubmittedAt         int64  `json:"submittedAt,omitempty" example:"1704067200"`
+	FilledAt            int64  `json:"filledAt,omitempty" example:"1704067200"`
+	CancelledAt         int64  `json:"cancelledAt,omitempty" example:"1704067200"`
+	ExpiredAt           int64  `json:"expiredAt,omitempty" example:"1704067200"`
 }
 
 // OrderExecutionDTO JSON representation of an order execution

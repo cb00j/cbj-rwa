@@ -1,0 +1,1 @@
+ALTER TABLE orders DROP COLUMN IF EXISTS backend_refund_tx_hash;
