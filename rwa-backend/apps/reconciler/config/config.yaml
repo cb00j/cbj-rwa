@@ -1,0 +1,35 @@
+appName: "Reconciler"
+
+db:
+  host: "127.0.0.1"
+  port: 5432
+  username: "root"
+  password: "root"
+  database: "rwa"
+  maxIdleConns: 20
+  maxOpenConns: 200
+  logLevel: 2
+  sqlSlowThresholdMill: 10000
+  migrationPath: "file://migrations/rwa"
+  sslMode: "disable"
+
+rpcInfo:
+  31337:
+    rpcUrl: "http://127.0.0.1:8545"
+    wssUrl: "ws://127.0.0.1:8545"
+    nativeTokenSymbol: "ETH"
+    nativeTokenDecimals: 18
+
+chain:
+  chainId: 31337
+  orderAddress: "0x0000000000000000000000000000000000000000" # 部署后替换
+
+backend:
+  privateKey: "" # 必须是真正持有 OrderContract.BACKEND_ROLE 的那把私钥
+
+logger:
+  level: "debug"
+  encoderType: "console"
+  outputType: "all"
+  maxAge: 30
+  enableColor: true

@@ -59,6 +59,12 @@ type Order struct {
 	FilledAt    *time.Time `gorm:"column:filled_at" json:"filledAt"`
 	CancelledAt *time.Time `gorm:"column:cancelled_at" json:"cancelledAt"`
 	ExpiredAt   *time.Time `gorm:"column:expired_at" json:"expiredAt"`
+
+	// reconciler tracking fields
+	SettlementAttempts      int        `gorm:"column:settlement_attempts" json:"settlementAttempts"` // the number of settlement attempts made for this order
+	LastSettlementAttemptAt *time.Time `gorm:"column:last_settlement_attempt_at" json:"lastSettlementAttemptAt"`
+	LastSettlementError     string     `gorm:"column:last_settlement_error" json:"lastSettlementError"`
+	NeedsManualReview       bool       `gorm:"column:needs_manual_review" json:"needsManualReview"` // whether the order needs manual review due to repeated settlement failures
 }
 
 // OrderExecution maps to public.order_executions

@@ -22,6 +22,7 @@ import (
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/evm_helper"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/kafka_helper"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/models/rwa"
+	"github.com/cb00j/cbj-rwa/rwa-backend/libs/core/trade"
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/log"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -214,146 +215,23 @@ func (s *OrderSyncService) HandleExpired(ctx context.Context, data handlers.Trad
 }
 
 func (s *OrderSyncService) handleFillOrPartialFill(ctx context.Context, data handlers.TradeUpdateMessageData, isFull bool) {
-	eventLabel := "HandleFill"
-	if !isFull {
-		eventLabel = "HandlePartialFill"
+	input := trade.FillEventInput{
+		ClientOrderID:   data.Order.ClientOrderID,
+		ExecutionID:     data.ExecutionID,
+		Price:           data.Price,
+		Qty:             data.Qty,
+		Timestamp:       data.Timestamp,
+		FilledAvgPrice:  data.Order.FilledAvgPrice,
+		FilledQty:       data.Order.FilledQty,
+		ExternalOrderID: data.Order.ID,
+		IsFull:          isFull,
 	}
 
-	clientOrderID, err := extractClientOrderID(data)
+	order, err := trade.ProcessFillEvent(ctx, s.db, input)
 	if err != nil {
-		log.ErrorZ(ctx, eventLabel+": failed to extract client_order_id", zap.Error(err))
+		s.persistFailedEvent(ctx, data.Order.ClientOrderID, data, err)
 		return
 	}
-
-	order, err := s.findOrderByClientOrderID(ctx, clientOrderID)
-	if err != nil {
-		log.ErrorZ(ctx, eventLabel+": failed to find order",
-			zap.Error(err), zap.String("client_order_id", clientOrderID))
-		return
-	}
-
-	execPrice, err := decimal.NewFromString(data.Price)
-	if err != nil {
-		log.ErrorZ(ctx, eventLabel+": failed to parse price",
-			zap.Error(err), zap.String("price", data.Price))
-		return
-	}
-
-	execQty, err := decimal.NewFromString(data.Qty)
-	if err != nil {
-		log.ErrorZ(ctx, eventLabel+": failed to parse qty",
-			zap.Error(err), zap.String("qty", data.Qty))
-		return
-	}
-
-	// Begin transaction for atomicity
-	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// indempotency check: if execution_id already exists, skip
-		if data.ExecutionID != "" {
-			q, u := gplus.NewQuery[rwa.OrderExecution]()
-			q.Eq(&u.ExecutionID, data.ExecutionID)
-			existing, dbRes := gplus.SelectOne(q, gplus.Db(tx))
-			if dbRes.Error == nil && existing != nil {
-				log.InfoZ(ctx, eventLabel+": execution_id already exists, skipping duplicate event",
-					zap.String("execution_id", data.ExecutionID),
-					zap.String("client_order_id", clientOrderID))
-				return nil
-			}
-
-			// If dbRes.Error is not a record not found error, it indicates a database error, so we should return it
-			if dbRes.Error != nil && !errors.Is(dbRes.Error, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("failed to check existing execution: %w", dbRes.Error)
-			}
-		}
-
-		// Create OrderExecution record
-		execution := rwa.OrderExecution{
-			OrderID:     order.ID,
-			ExecutionID: data.ExecutionID,
-			Quantity:    execQty,
-			Price:       execPrice,
-			Provider:    "alpaca",
-			ExecutedAt:  *parseTimestampOrNow(data.Timestamp),
-		}
-
-		if dbRes := gplus.Insert(&execution, gplus.Db(tx)); dbRes.Error != nil {
-			return fmt.Errorf("failed to insert order execution: %w", dbRes.Error)
-		}
-
-		// Update order filled quantity and price
-		// New filled quantity = previous filled + this execution qty
-		newFilledQty := order.FilledQuantity.Add(execQty)
-
-		// Compute volume-weighted average price (VWAP) for filled price
-		// VWAP = (old_filled_qty * old_filled_price + exec_qty * exec_price) / new_filled_qty
-		if newFilledQty.IsPositive() {
-			order.FilledPrice = order.FilledPrice.Mul(order.FilledQuantity).Add(execPrice.Mul(execQty)).Div(newFilledQty)
-		}
-		order.FilledQuantity = newFilledQty
-		order.RemainingQuantity = order.Quantity.Sub(newFilledQty)
-
-		// Use Alpaca's authoritative filled_avg_price if available
-		if data.Order.FilledAvgPrice != "" {
-			if avgPrice, err := decimal.NewFromString(data.Order.FilledAvgPrice); err == nil {
-				order.FilledPrice = avgPrice
-			}
-		}
-
-		// Use Alpaca's authoritative filled_qty for total filled if available
-		if data.Order.FilledQty != "" {
-			if fq, err := decimal.NewFromString(data.Order.FilledQty); err == nil {
-				order.FilledQuantity = fq
-				order.RemainingQuantity = order.Quantity.Sub(fq)
-			}
-		}
-
-		// Determine status based on fill completeness
-		if order.FilledQuantity.GreaterThanOrEqual(order.Quantity) {
-			order.Status = rwa.OrderStatusFilled
-		} else {
-			order.Status = rwa.OrderStatusPartiallyFilled
-		}
-
-		// Extract external order ID if not already set
-		if order.ExternalOrderID == "" && data.Order.ID != "" {
-			order.ExternalOrderID = data.Order.ID
-		}
-
-		if err := tx.Save(order).Error; err != nil {
-			return fmt.Errorf("failed to update order: %w", err)
-		}
-
-		return nil
-	})
-
-	if txErr != nil {
-		log.ErrorZ(ctx, eventLabel+": transaction failed",
-			zap.Error(txErr),
-			zap.String("client_order_id", clientOrderID),
-			zap.String("execution_id", data.ExecutionID),
-			zap.String("event", data.Event),
-			zap.String("price", data.Price),
-			zap.String("qty", data.Qty),
-			zap.String("alpaca_order_id", data.Order.ID),
-			zap.String("filled_avg_price", data.Order.FilledAvgPrice),
-			zap.String("filled_qty", data.Order.FilledQty),
-			zap.String("timestamp", data.Timestamp),
-		)
-
-		// Persist failed event to failed_events table for later recovery
-		s.persistFailedEvent(ctx, clientOrderID, data, txErr)
-		return
-	}
-
-	log.InfoZ(ctx, eventLabel+": order updated successfully",
-		zap.String("client_order_id", clientOrderID),
-		zap.Uint64("order_id", order.ID),
-		zap.String("status", string(order.Status)),
-		zap.String("filled_quantity", order.FilledQuantity.String()),
-		zap.String("filled_price", order.FilledPrice.String()),
-		zap.String("exec_price", execPrice.String()),
-		zap.String("exec_qty", execQty.String()),
-		zap.String("execution_id", data.ExecutionID))
 
 	if isFull {
 		s.publishOrderUpdate(ctx, order, "fill")

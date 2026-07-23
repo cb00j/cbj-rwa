@@ -4,6 +4,7 @@ use (
 	./apps/alpaca-stream
 	./apps/api
 	./apps/indexer
+	./apps/reconciler
 	./apps/ws-server
 	./libs/contracts
 	./libs/core
