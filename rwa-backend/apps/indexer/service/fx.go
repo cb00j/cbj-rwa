@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 func LoadModule() fx.Option {
@@ -30,8 +31,8 @@ func provideHandlers(
 	tradeService trade.TradeService,
 	conf *config.Config,
 	evmClient *evm_helper.EvmClient,
+	db *gorm.DB, // 新增:AfterCommit要在事务外单独查/改库,需要主db连接,不能用tx
 ) ([]EventHandler, error) {
-	// Parse backend private key for on-chain transactions (e.g., cancelOrder on Alpaca failure)
 	var backendPK *ecdsa.PrivateKey
 	if conf.Backend != nil && conf.Backend.PrivateKey != "" {
 		pk, err := crypto.HexToECDSA(conf.Backend.PrivateKey)
@@ -42,7 +43,8 @@ func provideHandlers(
 		}
 	}
 
-	orderSubmittedHandler, err := handlers.NewHandleOrderSubmitted(tradeService, conf.Chain.UsdmAddress, evmClient, conf.Chain.ChainId, conf.Chain.OrderAddress, backendPK)
+	orderSubmittedHandler, err := handlers.NewHandleOrderSubmitted(
+		tradeService, conf.Chain.UsdmAddress, evmClient, conf.Chain.ChainId, conf.Chain.OrderAddress, backendPK, db)
 	if err != nil {
 		return nil, err
 	}
@@ -68,14 +70,6 @@ func provideHandlers(
 	}
 
 	// TODO: Add Gate contract event handlers once Gate Go bindings are generated.
-	// Gate.sol emits these events: PendingDeposit, DepositProcessed, PendingWithdraw,
-	// WithdrawalProcessed, MinimumDepositAmountSet, MinimumWithdrawalAmountSet,
-	// DepositsPaused, DepositsUnpaused, WithdrawalsPaused, WithdrawalsUnpaused.
-	// Steps:
-	// 1. Generate Gate ABI JSON from the contract
-	// 2. Run: abigen -abi Gate.abi.json -out gate.go -pkg rwa -type Gate
-	// 3. Create handlers for PendingDeposit, DepositProcessed, PendingWithdraw, WithdrawalProcessed
-	// 4. Register handlers here with ContractTypeGate
 
 	return []EventHandler{
 		orderSubmittedHandler,
@@ -93,19 +87,16 @@ func registerEventListener(
 	processService *ProcessTxService,
 	conf *config.Config,
 ) {
-	// Create an independent context for polling that outlives the OnStart ctx.
 	pollingCtx, pollingCancel := context.WithCancel(context.Background())
 
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			// Initialize process service cache
 			if err := processService.InitCache(ctx); err != nil {
 				log.ErrorZ(ctx, "failed to init process service cache", zap.Error(err))
 				pollingCancel()
 				return err
 			}
 
-			// Start polling for events using the independent context
 			go func() {
 				if err := eventListener.StartPolling(pollingCtx, blockService, processService); err != nil {
 					log.ErrorZ(pollingCtx, "event listener polling stopped with error", zap.Error(err))
@@ -113,8 +104,7 @@ func registerEventListener(
 			}()
 
 			log.InfoZ(ctx, "event listener started",
-				zap.Uint64("chainId", conf.Chain.ChainId),
-				zap.String("orderAddress", conf.Chain.OrderAddress))
+				zap.Uint64("chainId", conf.Chain.ChainId), zap.String("orderAddress", conf.Chain.OrderAddress))
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {

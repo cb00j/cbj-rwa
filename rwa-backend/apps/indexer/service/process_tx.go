@@ -46,7 +46,6 @@ func (s *ProcessTxService) InitCache(ctx context.Context) error {
 		return nil
 	}
 
-	// Check event_client_record exists
 	q, u := gplus.NewQuery[rwa.EventClientRecord]()
 	q.Eq(&u.ChainID, s.conf.Chain.ChainId)
 	recordList, dbRes := gplus.SelectList(q, gplus.Db(s.db))
@@ -64,25 +63,17 @@ func (s *ProcessTxService) InitCache(ctx context.Context) error {
 }
 
 // ProcessEvent processes a single event with idempotency check using the provided transaction.
-// The resolvedUpTo parameter tracks the highest event ID resolved so far (including within the current batch),
-// so that duplicate events within the same batch are also skipped. The caller must not rely on
-// s.latestResolvedEventId being updated here; it is only updated after the transaction commits.
 func (s *ProcessTxService) ProcessEvent(ctx context.Context, tx *gorm.DB, event *types.EventLogWithId, resolvedUpTo uint64) error {
-	// Idempotency check: skip if event ID is already processed
 	if event.EventId <= resolvedUpTo {
 		log.InfoZ(ctx, "event already processed, skipping",
-			zap.Uint64("eventId", event.EventId),
-			zap.Uint64("resolvedUpTo", resolvedUpTo))
+			zap.Uint64("eventId", event.EventId), zap.Uint64("resolvedUpTo", resolvedUpTo))
 		return nil
 	}
 
-	// Check if handler exists for this event
 	if !lo.HasKey(s.handlerMap, event.ContractType) || !lo.HasKey(s.handlerMap[event.ContractType], event.Topics[0]) {
 		log.InfoZ(ctx, "no hander for event",
-			zap.String("txHash", event.TxHash),
-			zap.String("blockNumber", event.BlockNumber),
-			zap.Uint64("eventId", event.EventId),
-			zap.String("contractType", string(event.ContractType)),
+			zap.String("txHash", event.TxHash), zap.String("blockNumber", event.BlockNumber),
+			zap.Uint64("eventId", event.EventId), zap.String("contractType", string(event.ContractType)),
 			zap.String("topic0", event.Topics[0]))
 		return nil
 	}
@@ -91,23 +82,21 @@ func (s *ProcessTxService) ProcessEvent(ctx context.Context, tx *gorm.DB, event 
 	err := handler.HandleEvent(ctx, tx, event)
 	if err != nil {
 		log.ErrorZ(ctx, "failed to handle event",
-			zap.String("txHash", event.TxHash),
-			zap.String("blockNumber", event.BlockNumber),
-			zap.Uint64("eventId", event.EventId),
-			zap.Error(err))
+			zap.String("txHash", event.TxHash), zap.String("blockNumber", event.BlockNumber),
+			zap.Uint64("eventId", event.EventId), zap.Error(err))
 		return err
 	}
 
 	log.InfoZ(ctx, "event processed successfully",
-		zap.Uint64("eventId", event.EventId),
-		zap.String("txHash", event.TxHash),
-		zap.String("blockNumber", event.BlockNumber))
+		zap.Uint64("eventId", event.EventId), zap.String("txHash", event.TxHash), zap.String("blockNumber", event.BlockNumber))
 
 	return nil
 }
 
 // ProcessBatch processes all events and updates block progress in a single atomic transaction.
-// s.latestResolvedEventId is only updated after the transaction commits successfully.
+// Only after that transaction has actually committed does it call each handler's
+// AfterCommit — this is what guarantees Alpaca (or any other external system)
+// can never react to an order before that order is visible in the database.
 func (s *ProcessTxService) ProcessBatch(ctx context.Context, events []*types.EventLogWithId, toBlock uint64, blockService *BlockService) error {
 	maxEventID := s.latestResolvedEventId
 	for _, event := range events {
@@ -116,7 +105,6 @@ func (s *ProcessTxService) ProcessBatch(ctx context.Context, events []*types.Eve
 		}
 	}
 
-	// Track the resolved event ID within this batch without mutating s.latestResolvedEventId.
 	batchResolvedUpTo := s.latestResolvedEventId
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -125,20 +113,36 @@ func (s *ProcessTxService) ProcessBatch(ctx context.Context, events []*types.Eve
 			if err != nil {
 				return err
 			}
-
 			if event.EventId > batchResolvedUpTo {
 				batchResolvedUpTo = event.EventId
 			}
 		}
-		// Update block progress in the same transaction
 		return blockService.UpdateLastProcessedBlockTx(ctx, tx, toBlock, maxEventID)
 	})
-
 	if err != nil {
 		return err
 	}
 
-	// Transaction committed successfully — now update the in-memory state.
+	// Transaction committed successfully — every row written above is now
+	// visible to every other DB connection. Only now is it safe to run any
+	// handler logic that talks to the outside world.
 	s.latestResolvedEventId = batchResolvedUpTo
+
+	for _, event := range events {
+		if !lo.HasKey(s.handlerMap, event.ContractType) || !lo.HasKey(s.handlerMap[event.ContractType], event.Topics[0]) {
+			continue
+		}
+		handler := s.handlerMap[event.ContractType][event.Topics[0]]
+		if afterCommitErr := handler.AfterCommit(ctx, event); afterCommitErr != nil {
+			// The DB write is already durably committed at this point — an
+			// AfterCommit failure (e.g. Alpaca is down) must NOT be treated
+			// as a batch failure, or we'd re-process an event whose row
+			// already exists. Log it; recovery for this specific gap is the
+			// reconciler's job (see the Pending+no-ExternalOrderID scan rule).
+			log.ErrorZ(ctx, "AfterCommit failed for event; will need reconciler to pick this up",
+				zap.Uint64("eventId", event.EventId), zap.String("txHash", event.TxHash), zap.Error(afterCommitErr))
+		}
+	}
+
 	return nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/acmestack/gorm-plus/gplus"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/v2"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/shopspring/decimal"
 
@@ -179,8 +180,8 @@ func (s *OrderSyncService) HandleRejected(ctx context.Context, data handlers.Tra
 
 	s.publishOrderUpdate(ctx, order, "rejected")
 
-	// Call on-chain cancelOrder to refund escrowed assets to user
-	go s.callCancelOrder(ctx, order)
+	// Call on-chain callCancelOrRefund to refund escrowed assets to user
+	go s.callCancelOrRefund(ctx, order)
 }
 
 // HandleDoneForDay handles the done_for_day event.
@@ -345,11 +346,11 @@ func (s *OrderSyncService) handleTerminalState(
 
 	// On-chain settlement:
 	// - If partially filled: call markExecuted (settles filled portion + refunds unfilled)
-	// - If not filled at all: call cancelOrder (refunds entire escrow)
+	// - If not filled at all: call callCancelOrRefund (refunds entire escrow)
 	if wasPartiallyFilled {
 		go s.callMarkExecuted(ctx, order)
 	} else {
-		go s.callCancelOrder(ctx, order)
+		go s.callCancelOrRefund(ctx, order)
 	}
 }
 
@@ -477,76 +478,6 @@ func (s *OrderSyncService) callMarkExecuted(parentCtx context.Context, order *rw
 	}
 }
 
-// callCancelOrder sends a cancelOrder transaction to the on-chain OrderContract
-// to refund the user's escrowed assets (USDM for buy orders, stock tokens for sell orders).
-// Called when Alpaca confirms cancellation, rejection, or expiration.
-func (s *OrderSyncService) callCancelOrder(parentCtx context.Context, order *rwa.Order) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	if traceID, ok := parentCtx.Value(log.TraceID).(string); ok {
-		ctx = context.WithValue(ctx, log.TraceID, traceID)
-	}
-
-	if s.privateKey == nil {
-		log.WarnZ(ctx, "callCancelOrder: backend private key not configured, skipping",
-			zap.Uint64("order_id", order.ID))
-		return
-	}
-	if s.conf.Chain == nil {
-		log.WarnZ(ctx, "callCancelOrder: chain config not set, skipping",
-			zap.Uint64("order_id", order.ID))
-		return
-	}
-
-	onChainOrderId, err := strconv.ParseUint(order.ClientOrderID, 10, 64)
-	if err != nil {
-		log.ErrorZ(ctx, "callCancelOrder: failed to parse clientOrderID as uint",
-			zap.Error(err),
-			zap.String("client_order_id", order.ClientOrderID),
-			zap.Uint64("order_id", order.ID))
-		return
-	}
-
-	chainId := s.conf.Chain.ChainId
-	ethClient := s.evmClient.MustGetHttpClient(chainId)
-	contractAddr := common.HexToAddress(s.conf.Chain.OrderAddress)
-	orderId := new(big.Int).SetUint64(onChainOrderId)
-
-	orderTransactor, err := contractRwa.NewOrderTransactor(contractAddr, ethClient)
-	if err != nil {
-		log.ErrorZ(ctx, "callCancelOrder: failed to create OrderTransactor",
-			zap.Error(err), zap.Uint64("order_id", order.ID))
-		return
-	}
-
-	auth := bind.NewKeyedTransactor(s.privateKey, new(big.Int).SetUint64(chainId))
-
-	tx, err := orderTransactor.CancelOrder(auth, orderId)
-	if err != nil {
-		log.ErrorZ(ctx, "callCancelOrder: contract call failed",
-			zap.Error(err),
-			zap.Uint64("order_id", order.ID),
-			zap.String("client_order_id", order.ClientOrderID),
-			zap.Uint64("on_chain_order_id", onChainOrderId))
-		return
-	}
-	txHash := tx.Hash().Hex()
-	log.InfoZ(ctx, "callCancelOrder: cancel tx sent",
-		zap.Uint64("order_id", order.ID),
-		zap.String("client_order_id", order.ClientOrderID),
-		zap.String("tx_hash", txHash))
-
-	// Save the cancel tx hash to the order record
-	if err := s.db.WithContext(ctx).Model(&rwa.Order{}).
-		Where("id = ?", order.ID).
-		Update("cancel_tx_hash", txHash).Error; err != nil {
-		log.ErrorZ(ctx, "callCancelOrder: failed to save cancel_tx_hash",
-			zap.Error(err),
-			zap.Uint64("order_id", order.ID),
-			zap.String("tx_hash", txHash))
-	}
-}
-
 // extractClientOrderID extracts the client_order_id from the Alpaca trade update data.
 func extractClientOrderID(data handlers.TradeUpdateMessageData) (string, error) {
 	if data.Order.ClientOrderID == "" {
@@ -622,4 +553,83 @@ func (s *OrderSyncService) persistFailedEvent(ctx context.Context, clientOrderID
 		zap.String("client_order_id", clientOrderID),
 		zap.String("event_type", data.Event),
 		zap.String("execution_id", data.ExecutionID))
+}
+
+// callCancelOrRefund checks the on-chain order status and calls either cancelOrder or backendRefund
+// depending on whether the user had requested cancellation or not.
+// This is used for orders that are rejected or cancelled by Alpaca.
+func (s *OrderSyncService) callCancelOrRefund(parentCtx context.Context, order *rwa.Order) {
+	ctx, cancel := context.WithTimeout(parentCtx, 60*time.Second)
+	defer cancel()
+
+	if s.privateKey == nil || s.conf.Chain == nil {
+		log.WarnZ(ctx, "callCancelOrRefund: missing private key or chain config, skipping", zap.Uint64("order_id", order.ID))
+		return
+	}
+
+	onChainOrderId, ok := new(big.Int).SetString(order.ClientOrderID, 10)
+	if !ok {
+		log.ErrorZ(ctx, "callCancelOrRefund: client_order_id is not a valid on-chain order id",
+			zap.String("client_order_id", order.ClientOrderID), zap.Uint64("order_id", order.ID))
+		return
+	}
+
+	chainId := s.conf.Chain.ChainId
+	ethClient := s.evmClient.MustGetHttpClient(chainId)
+	contractAddr := common.HexToAddress(s.conf.Chain.OrderAddress)
+
+	// Step 1: Read the on-chain order status to determine whether the user had requested cancellation or not.
+	orderCaller, err := contractRwa.NewOrderCaller(contractAddr, ethClient)
+	if err != nil {
+		log.ErrorZ(ctx, "callCancelOrRefund: failed to create OrderCaller", zap.Error(err), zap.Uint64("order_id", order.ID))
+		return
+	}
+	onChainOrder, err := orderCaller.GetOrder(&bind.CallOpts{Context: ctx}, onChainOrderId)
+	if err != nil {
+		log.ErrorZ(ctx, "callCancelOrRefund: failed to read on-chain order", zap.Error(err), zap.Uint64("order_id", order.ID))
+		return
+	}
+
+	orderTransactor, err := contractRwa.NewOrderTransactor(contractAddr, ethClient)
+	if err != nil {
+		log.ErrorZ(ctx, "callCancelOrRefund: failed to create OrderTransactor", zap.Error(err), zap.Uint64("order_id", order.ID))
+		return
+	}
+	auth := bind.NewKeyedTransactor(s.privateKey, new(big.Int).SetUint64(chainId))
+
+	// Step 2: Based on the actual on-chain status, directly call the appropriate function
+	var tx *types.Transaction
+	var txHashField string
+	switch onChainOrder.Status {
+	case 2: // CANCELREQUESTED —— user had requested cancellation, so call cancelOrder to refund
+		tx, err = orderTransactor.CancelOrder(auth, onChainOrderId)
+		txHashField = "cancel_tx_hash"
+	case 0: // PENDING —— user never requested cancellation, Alpaca terminated the order unilaterally
+		tx, err = orderTransactor.BackendRefund(auth, onChainOrderId)
+		txHashField = "backend_refund_tx_hash"
+	default:
+		// EXECUTED/CANCELLED —— already in a terminal state, likely a duplicate trigger, idempotently skip
+		log.InfoZ(ctx, "callCancelOrRefund: order already in a terminal on-chain state, skipping",
+			zap.Uint64("order_id", order.ID), zap.Uint8("on_chain_status", onChainOrder.Status))
+		return
+	}
+
+	if err != nil {
+		log.ErrorZ(ctx, "callCancelOrRefund: on-chain call failed",
+			zap.Error(err), zap.Uint64("order_id", order.ID), zap.Uint8("on_chain_status", onChainOrder.Status))
+		return
+	}
+
+	txHash := tx.Hash().Hex()
+	log.InfoZ(ctx, "callCancelOrRefund: on-chain settlement tx sent",
+		zap.String("tx_hash", txHash), zap.String("field", txHashField),
+		zap.Uint64("order_id", order.ID), zap.Uint8("on_chain_status", onChainOrder.Status))
+
+	if err := s.db.WithContext(ctx).Model(&rwa.Order{}).
+		Where("id = ?", order.ID).
+		Update(txHashField, txHash).Error; err != nil {
+		log.ErrorZ(ctx, "callCancelOrRefund: failed to save tx hash",
+			zap.Error(err), zap.String("field", txHashField), zap.Uint64("order_id", order.ID), zap.String("tx_hash", txHash))
+	}
+
 }

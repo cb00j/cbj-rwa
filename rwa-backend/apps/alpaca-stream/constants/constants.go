@@ -8,15 +8,15 @@ const (
 )
 
 const (
-	EventTypeAccepted        = "accepted" // order has been accepted by the exchange,but not routed to the market yet（Non-trading hours）
-	EventTypeNew             = "new"      // order has been routed to the market and ready to be filled
+	EventTypeAccepted        = "accepted" // order has been accepted by the alpaca,but not routed to the market maker yet
+	EventTypeNew             = "new"      // formally accepted, entered into the matching queue
 	EventTypeFill            = "fill"
 	EventTypePartialFill     = "partial_fill"
 	EventTypeCanceled        = "canceled"
 	EventTypeExpired         = "expired"
 	EventTypeRejected        = "rejected"
 	EventTypeReplaced        = "replaced"
-	EventTypePendingNew      = "pending_new"
+	EventTypePendingNew      = "pending_new" // the market maker gets the order but hasn't yet been officially registered into their matchmaking system
 	EventTypePendingCancel   = "pending_cancel"
 	EventTypePendingReplace  = "pending_replace"
 	EventTypeCancelRejected  = "cancel_rejected"

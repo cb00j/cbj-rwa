@@ -144,6 +144,8 @@ contract OrderContract is
         if (_usdm == address(0)) revert ZeroAddress();
         if (_admin == address(0)) revert ZeroAddress();
 
+        nextOrderId = block.timestamp * 1e6; // Start orderId with timestamp to avoid collisions on redeploys
+
         usdm = ICBJTokenLike(_usdm);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
@@ -210,7 +212,7 @@ contract OrderContract is
 
         orders[orderId] = Order({
             id: orderId,
-            orderNumber: _composeOrderId(msg.sender, orderType, seq),
+            orderNumber: _composeOrderNumber(msg.sender, orderType, seq),
             user: msg.sender,
             symbol: symbol,
             qty: qty,
@@ -356,7 +358,7 @@ contract OrderContract is
     }
 
     // ============ Internal ============
-    function _composeOrderId(
+    function _composeOrderNumber(
         address user,
         OrderType orderType,
         uint seq

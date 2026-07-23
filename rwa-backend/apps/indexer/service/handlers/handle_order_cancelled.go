@@ -178,3 +178,7 @@ func (h *HandleOrderCancelled) HandleEvent(ctx context.Context, tx *gorm.DB, eve
 
 	return nil
 }
+
+func (h *HandleOrderCancelled) AfterCommit(ctx context.Context, event *coreTypes.EventLogWithId) error {
+	return nil
+}

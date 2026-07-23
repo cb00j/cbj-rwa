@@ -87,3 +87,7 @@ func (h *HandleOrderBackendRefunded) HandleEvent(ctx context.Context, tx *gorm.D
 
 	return nil
 }
+
+func (h *HandleOrderBackendRefunded) AfterCommit(ctx context.Context, event *coreTypes.EventLogWithId) error {
+	return nil
+}

@@ -126,3 +126,7 @@ func (h *HandleCancelRequested) HandleEvent(ctx context.Context, tx *gorm.DB, ev
 
 	return nil
 }
+
+func (h *HandleCancelRequested) AfterCommit(ctx context.Context, event *coreTypes.EventLogWithId) error {
+	return nil
+}

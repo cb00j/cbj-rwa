@@ -182,3 +182,7 @@ func (h *HandleOrderExecuted) HandleEvent(ctx context.Context, tx *gorm.DB, even
 
 	return nil
 }
+
+func (h *HandleOrderExecuted) AfterCommit(ctx context.Context, event *coreTypes.EventLogWithId) error {
+	return nil
+}
