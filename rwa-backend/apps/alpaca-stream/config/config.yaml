@@ -18,7 +18,7 @@ chain:
   orderAddress: "0x5C7c905B505f0Cf40Ab6600d05e677F717916F6B" # OrderContract proxy address (deploy后替换)
 
 backend:
-  privateKey: "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" # Backend wallet private key (BACKEND_ROLE on OrderContract)
+  privateKey: "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" # Backend wallet private key (BACKEND_ROLE on OrderContract)
 
 db:
   host: "192.168.5.180"
