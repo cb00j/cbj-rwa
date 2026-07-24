@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/cb00j/cbj-rwa/rwa-backend/libs/log"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +31,28 @@ func NewMigration(ctx context.Context, conf *DbConf) (*Migration, error) {
 		conf.SslMode,
 		"_migrations",
 	)
-	client, err := migrate.New(conf.MigrationPath, dbURL)
+
+	// 不再用 file:// 这种URL字符串——golang-migrate 的 file:// 驱动在Windows上
+	// 对路径的解析有实测确认过的缺陷(不管是相对路径、还是带///的绝对路径,
+	// url.Parse 解析出来的 Path 字段要么被截断、要么带着Windows无法识别的
+	// 前导斜杠)。改用基于 io/fs 的 iofs 驱动 + os.DirFS,直接用Go标准库原生
+	// 处理文件系统路径,完全不经过URL字符串解析这一步,Windows/macOS通用。
+	relPath := strings.TrimPrefix(conf.MigrationPath, "file://")
+	absPath, err := filepath.Abs(relPath)
+	if err != nil {
+		log.ErrorZ(ctx, "failed to resolve migration path", zap.Error(err), zap.String("configuredPath", conf.MigrationPath))
+		return nil, err
+	}
+	log.InfoZ(ctx, "resolved migration directory", zap.String("configuredPath", conf.MigrationPath), zap.String("resolvedAbsPath", absPath))
+
+	fsys := os.DirFS(absPath)
+	sourceDriver, err := iofs.New(fsys, ".")
+	if err != nil {
+		log.ErrorZ(ctx, "failed to create iofs source driver", zap.Error(err), zap.String("absPath", absPath))
+		return nil, err
+	}
+
+	client, err := migrate.NewWithSourceInstance("iofs", sourceDriver, dbURL)
 	if err != nil {
 		log.ErrorZ(ctx, "new migration failed", zap.Error(err))
 		return nil, err
